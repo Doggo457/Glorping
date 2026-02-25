@@ -1,0 +1,14 @@
+25 10 32 32
+#s=stone.png
+#e=exit.png
+#map
+sssssssssssssssssssssssss
+s.......................s
+s.......................s
+s.......................s
+s.......................s
+s.......................s
+s.......................s
+s......................es
+sssssssssssssssssssssssss
+sssssssssssssssssssssssss
