@@ -47,6 +47,7 @@ public class MusicPlayer {
             sequencer.setLoopCount(Sequencer.LOOP_CONTINUOUSLY);
             sequencer.start();
             playing = true;
+            applyVolume();
         } catch (Exception e) {
             System.err.println("MIDI unavailable: " + e.getMessage());
         }
@@ -70,14 +71,26 @@ public class MusicPlayer {
      */
     public void setVolume(int vol) {
         this.volume = MathUtils.clampInt(vol, 0, 127);
-        if (sequencer != null && sequencer.isOpen()) {
-            try {
-                MidiChannel[] channels = ((Synthesizer) MidiSystem.getSynthesizer()).getChannels();
-                for (MidiChannel ch : channels) {
-                    ch.controlChange(7, this.volume);
-                }
-            } catch (Exception ignored) {}
-        }
+        applyVolume();
+    }
+
+    /** @return Current volume 0-127 */
+    public int getVolume() { return volume; }
+
+    /**
+     * Sends MIDI CC7 (channel volume) on all 16 channels via the
+     * sequencer's receiver, which is the actual synthesizer in use.
+     */
+    private void applyVolume() {
+        if (sequencer == null || !sequencer.isOpen()) return;
+        try {
+            Receiver recv = sequencer.getTransmitter().getReceiver();
+            for (int ch = 0; ch < 16; ch++) {
+                ShortMessage msg = new ShortMessage();
+                msg.setMessage(ShortMessage.CONTROL_CHANGE, ch, 7, volume);
+                recv.send(msg, -1);
+            }
+        } catch (Exception ignored) {}
     }
 
     /** @return True if the music sequencer is currently playing */

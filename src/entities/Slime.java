@@ -67,14 +67,38 @@ public class Slime extends Enemy {
                 // Hop toward the player
                 float dx = (target.getX() + target.getWidth() / 2f)
                          - (getX() + getWidth() / 2f);
+                float dy = target.getY() - getY();
                 facingRight = dx > 0;
                 float dirX = (dx > 0) ? 1f : -1f;
-                setVelocityX(dirX * speed * 2.0f);
-                setVelocityY(HOP_VY);
+
+                // Bigger hop if wall ahead or player is above
+                float hopVy = HOP_VY;
+                float hopVx = dirX * speed * 2.0f;
+                if (isWallAhead(tmap)) {
+                    hopVy = HOP_VY * 1.3f; // jump higher over walls
+                    hopVx = dirX * speed * 2.5f;
+                } else if (dy < -40) {
+                    hopVy = HOP_VY * 1.2f; // bigger hop to reach player above
+                }
+
+                // Stuck recovery — hop in opposite direction
+                if (stuck && stuckCount >= 3) {
+                    dirX = -dirX;
+                    facingRight = !facingRight;
+                    hopVx = dirX * speed * 2.5f;
+                    hopVy = HOP_VY * 1.3f;
+                }
+
+                setVelocityX(hopVx);
+                setVelocityY(hopVy);
                 hopCooldown = AGGRO_HOP_INTERVAL + (long)(Math.random() * 400);
             } else {
-                // Idle bounce in wander direction
-                if (Math.random() < 0.3) wanderDir = -wanderDir;
+                // Idle bounce — reverse at walls and ledges
+                if (isWallAhead(tmap) || isLedgeAhead(tmap)) {
+                    wanderDir = -wanderDir;
+                } else if (Math.random() < 0.3) {
+                    wanderDir = -wanderDir;
+                }
                 facingRight = wanderDir > 0;
                 setVelocityX(wanderDir * speed * 0.8f);
                 setVelocityY(IDLE_HOP_VY);

@@ -75,9 +75,19 @@ public class Bat extends Enemy {
         float len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len < 1f) len = 1f;
 
-        // Base pursuit velocity
-        float bvx = (dx / len) * speed;
-        float bvy = (dy / len) * speed;
+        // If stuck, try to navigate around the obstacle
+        float bvx, bvy;
+        if (stuck && !hasLineOfSight(tmap)) {
+            // Steer perpendicular to break free, alternating direction
+            float perpX = -dy / len;
+            float perpY =  dx / len;
+            int side = (stuckCount % 2 == 0) ? 1 : -1;
+            bvx = ((dx / len) * 0.3f + perpX * side * 0.7f) * speed * 1.5f;
+            bvy = ((dy / len) * 0.3f + perpY * side * 0.7f) * speed * 1.5f;
+        } else {
+            bvx = (dx / len) * speed;
+            bvy = (dy / len) * speed;
+        }
 
         // Perpendicular oscillation (90° rotation of direction vector)
         sinePhase += SINE_SPEED * elapsed;
@@ -93,6 +103,9 @@ public class Bat extends Enemy {
 
         setVelocityX(bvx);
         setVelocityY(bvy);
+
+        // Steer away from walls
+        applyWallAvoidance(tmap, speed * 0.8f);
 
         facingRight = dx > 0;
         setScale(facingRight ? 1f : -1f, 1f);

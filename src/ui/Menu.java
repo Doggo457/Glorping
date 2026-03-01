@@ -31,6 +31,7 @@ public class Menu {
     /** Buttons registered during the last draw call */
     private final List<MenuButton> buttons = new ArrayList<>();
 
+
     // =========================================================================
     // Button tracking
     // =========================================================================
@@ -154,28 +155,184 @@ public class Menu {
     }
 
     public void drawSettingsMenu(Graphics2D g, int screenWidth, int screenHeight,
-                                  boolean godMode, boolean infiniteMana, boolean fullscreen,
-                                  boolean debug, boolean musicOn) {
+                                  String tab, boolean godMode, boolean infiniteMana,
+                                  boolean fullscreen, boolean debug, boolean musicOn,
+                                  boolean sfxOn, boolean showFps, boolean screenShake,
+                                  int screenW, int screenH) {
         buttons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.85f);
 
         drawCentredText(g, TITLE_FONT, new Color(200, 180, 255),
-                "S E T T I N G S", screenWidth, screenHeight / 2 - 150);
+                "S E T T I N G S", screenWidth, 55);
 
-        int rowY = screenHeight / 2 - 70;
-        drawToggleButton(g, screenWidth, rowY,       "Music",          musicOn,      "toggle_music");
-        drawToggleButton(g, screenWidth, rowY + 35,  "Fullscreen",     fullscreen,   "toggle_fullscreen");
-        drawToggleButton(g, screenWidth, rowY + 70,  "Debug Overlay",  debug,        "toggle_debug");
-        drawToggleButton(g, screenWidth, rowY + 115, "God Mode",       godMode,      "toggle_god");
-        drawToggleButton(g, screenWidth, rowY + 150, "Infinite Mana",  infiniteMana, "toggle_mana");
+        // Tab buttons along the top
+        int tabY = 95;
+        int tabSpacing = 140;
+        int tabStartX = screenWidth / 2 - (int)(tabSpacing * 1.5f);
+        drawTabButton(g, tabStartX,                tabY, "Video",    "tab_video",    tab.equals("video"));
+        drawTabButton(g, tabStartX + tabSpacing,   tabY, "Audio",    "tab_audio",    tab.equals("audio"));
+        drawTabButton(g, tabStartX + tabSpacing*2, tabY, "Gameplay", "tab_gameplay", tab.equals("gameplay"));
 
-        int actionY = rowY + 200;
-        drawButton(g, BODY_FONT, "Restart Game", screenWidth, actionY,      "restart",
+        // Divider line
+        g.setColor(new Color(100, 80, 140, 120));
+        g.drawLine(screenWidth / 2 - 200, tabY + 20, screenWidth / 2 + 200, tabY + 20);
+
+        int contentY = tabY + 50;
+
+        switch (tab) {
+            case "video":
+                drawVideoSettings(g, screenWidth, contentY, fullscreen, showFps, screenW, screenH);
+                break;
+            case "audio":
+                drawAudioSettings(g, screenWidth, contentY, musicOn, sfxOn);
+                break;
+            case "gameplay":
+                drawGameplaySettings(g, screenWidth, contentY, godMode, infiniteMana, debug, screenShake);
+                break;
+            default:
+                // Default to video
+                drawVideoSettings(g, screenWidth, contentY, fullscreen, showFps, screenW, screenH);
+                break;
+        }
+
+        // Bottom actions
+        int bottomY = screenHeight - 100;
+        drawButton(g, BODY_FONT, "Restart Game", screenWidth, bottomY,      "restart",
                 new Color(200, 80, 80), new Color(255, 120, 120));
-        drawButton(g, BODY_FONT, "Main Menu",    screenWidth, actionY + 40, "main_menu",
+        drawButton(g, BODY_FONT, "Main Menu",    screenWidth, bottomY + 35, "main_menu",
                 new Color(200, 80, 80), new Color(255, 120, 120));
-        drawButton(g, BODY_FONT, "Back",         screenWidth, actionY + 80, "back",
+        drawButton(g, BODY_FONT, "Back",         screenWidth, bottomY + 70, "back",
                 new Color(150, 130, 170), BTN_HOVER);
+    }
+
+    // =========================================================================
+    // Settings sub-pages
+    // =========================================================================
+
+    private void drawVideoSettings(Graphics2D g, int screenWidth, int y,
+                                    boolean fullscreen, boolean showFps,
+                                    int currentW, int currentH) {
+        drawSectionLabel(g, screenWidth, y, "Display");
+
+        int rowY = y + 30;
+        drawToggleButton(g, screenWidth, rowY, "Fullscreen", fullscreen, "toggle_fullscreen");
+        drawToggleButton(g, screenWidth, rowY + 35, "Show FPS", showFps, "toggle_fps");
+
+        drawSectionLabel(g, screenWidth, rowY + 85, "Resolution");
+
+        int resY = rowY + 115;
+        String currentRes = currentW + "x" + currentH;
+        String[][] resolutions = {
+            {"800x600",   "res_800_600"},
+            {"1024x768",  "res_1024_768"},
+            {"1280x720",  "res_1280_720"},
+            {"1920x1080", "res_1920_1080"}
+        };
+        for (String[] res : resolutions) {
+            boolean active = res[0].equals(currentRes);
+            drawResButton(g, screenWidth, resY, res[0], res[1], active);
+            resY += 32;
+        }
+    }
+
+    private void drawAudioSettings(Graphics2D g, int screenWidth, int y,
+                                    boolean musicOn, boolean sfxOn) {
+        drawSectionLabel(g, screenWidth, y, "Music");
+
+        int rowY = y + 30;
+        drawToggleButton(g, screenWidth, rowY, "Music", musicOn, "toggle_music");
+
+        drawSectionLabel(g, screenWidth, rowY + 50, "Sound Effects");
+        drawToggleButton(g, screenWidth, rowY + 80, "Sound FX", sfxOn, "toggle_sfx");
+    }
+
+    private void drawGameplaySettings(Graphics2D g, int screenWidth, int y,
+                                       boolean godMode, boolean infiniteMana,
+                                       boolean debug, boolean screenShake) {
+        drawSectionLabel(g, screenWidth, y, "Cheats");
+
+        int rowY = y + 30;
+        drawToggleButton(g, screenWidth, rowY,      "God Mode",       godMode,      "toggle_god");
+        drawToggleButton(g, screenWidth, rowY + 35, "Infinite Mana",  infiniteMana, "toggle_mana");
+
+        drawSectionLabel(g, screenWidth, rowY + 85, "Options");
+        drawToggleButton(g, screenWidth, rowY + 115, "Debug Overlay",  debug,        "toggle_debug");
+        drawToggleButton(g, screenWidth, rowY + 150, "Screen Shake",   screenShake,  "toggle_shake");
+    }
+
+    // =========================================================================
+    // Settings drawing helpers
+    // =========================================================================
+
+    private void drawSectionLabel(Graphics2D g, int screenWidth, int y, String label) {
+        g.setFont(BODY_FONT);
+        g.setColor(new Color(160, 130, 220));
+        FontMetrics fm = g.getFontMetrics();
+        int textW = fm.stringWidth(label);
+        int cx = (screenWidth - textW) / 2;
+        g.drawString(label, cx, y);
+
+        // Underline
+        g.setColor(new Color(100, 80, 160, 80));
+        g.drawLine(cx, y + 4, cx + textW, y + 4);
+    }
+
+    private void drawTabButton(Graphics2D g, int x, int y, String label,
+                                String action, boolean active) {
+        g.setFont(BODY_FONT);
+        FontMetrics fm = g.getFontMetrics();
+        int textW = fm.stringWidth(label);
+        int padX = 15, padY = 4;
+        int bw = textW + padX * 2;
+        int bh = fm.getHeight() + padY * 2;
+        int bx = x - padX;
+        int by = y - fm.getHeight() + fm.getDescent() - padY;
+
+        Rectangle rect = new Rectangle(bx, by, bw, bh);
+        boolean hover = rect.contains(mouseX, mouseY);
+
+        if (active) {
+            g.setColor(new Color(100, 70, 180, 100));
+            g.fillRoundRect(bx, by, bw, bh, 8, 8);
+            g.setColor(new Color(160, 130, 255));
+            g.drawRoundRect(bx, by, bw, bh, 8, 8);
+        } else if (hover) {
+            g.setColor(BTN_BG_HOVER);
+            g.fillRoundRect(bx, by, bw, bh, 8, 8);
+        }
+
+        g.setColor(active ? Color.WHITE : (hover ? BTN_HOVER : BTN_NORMAL));
+        g.drawString(label, x, y);
+        buttons.add(new MenuButton(rect, action));
+    }
+
+    private void drawResButton(Graphics2D g, int screenWidth, int y, String label,
+                                String action, boolean active) {
+        g.setFont(BODY_FONT);
+        FontMetrics fm = g.getFontMetrics();
+        int textW = fm.stringWidth(label);
+        int padX = 20, padY = 4;
+        int bw = textW + padX * 2;
+        int bh = fm.getHeight() + padY * 2;
+        int bx = (screenWidth - bw) / 2;
+        int by = y - fm.getHeight() + fm.getDescent() - padY;
+
+        Rectangle rect = new Rectangle(bx, by, bw, bh);
+        boolean hover = rect.contains(mouseX, mouseY);
+
+        if (active) {
+            g.setColor(new Color(60, 140, 60, 120));
+            g.fillRoundRect(bx, by, bw, bh, 6, 6);
+            g.setColor(new Color(80, 200, 80));
+            g.drawRoundRect(bx, by, bw, bh, 6, 6);
+        } else if (hover) {
+            g.setColor(BTN_BG_HOVER);
+            g.fillRoundRect(bx, by, bw, bh, 6, 6);
+        }
+
+        g.setColor(active ? new Color(120, 255, 120) : (hover ? BTN_HOVER : BTN_NORMAL));
+        g.drawString(label, (screenWidth - textW) / 2, y);
+        if (!active) buttons.add(new MenuButton(rect, action));
     }
 
     /**

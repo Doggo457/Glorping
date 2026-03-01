@@ -38,6 +38,10 @@ public final class ResourceGenerator {
         generateSlimeSheet();
         generateBatSheet();
         generateWizardEnemySheet();
+        generateSkeletonSheet();
+        generateSpiderSheet();
+        generateGhostSheet();
+        generateFireSpiritSheet();
         generateProjectileSheets();
         generateExplosionSheet();
         generatePickupImages();
@@ -225,7 +229,7 @@ public final class ResourceGenerator {
     private static void generateWizardSheet() {
         String path = IMG_PATH + "wizard.png";
         if (!needsCreate(path)) return;
-        BufferedImage sheet = new BufferedImage(128, 160, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage sheet = new BufferedImage(128, 192, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = sheet.createGraphics();
 
         // Idle: subtle Y bob
@@ -244,6 +248,9 @@ public final class ResourceGenerator {
 
         // Wall grab
         for (int f = 0; f < 4; f++) drawWizardWallGrab(g, f * 32, 128, f);
+
+        // Dash (row 5, frames 20–23): wizard leaning forward with motion blur
+        for (int f = 0; f < 4; f++) drawWizardDash(g, f * 32, 160, f);
 
         g.dispose();
         saveImage(sheet, path);
@@ -356,6 +363,49 @@ public final class ResourceGenerator {
         g.fillRect(bx+22, by+30, 4, 3 + (2 - legOff));
     }
 
+    private static void drawWizardDash(Graphics2D g, int bx, int by, int frame) {
+        // Wizard leaning forward with motion trails behind
+        int lean = 3; // lean forward offset
+
+        // Motion trail (fading afterimages behind)
+        Composite old = g.getComposite();
+        for (int t = 2; t >= 1; t--) {
+            float alpha = 0.15f * t;
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+            int trailX = bx - t * 5 - frame * 2;
+            drawWizard(g, trailX, by, false, false);
+        }
+        g.setComposite(old);
+
+        // Main wizard body (leaning forward)
+        // Hat – leaning forward
+        int[] hx = {bx+10+lean, bx+16+lean, bx+22+lean, bx+20+lean, bx+12+lean};
+        int[] hy = {by+14, by+4, by+14, by+17, by+17};
+        g.setColor(new Color(60, 0, 100));
+        g.fillPolygon(hx, hy, 5);
+        g.setColor(new Color(80, 0, 130));
+        g.fillRect(bx+8+lean, by+15, 16, 3);
+        // Face
+        g.setColor(new Color(255, 210, 170));
+        g.fillOval(bx+10+lean, by+16, 12, 10);
+        // Eyes – determined
+        g.setColor(Color.BLACK);
+        g.fillRect(bx+13+lean, by+19, 2, 2);
+        g.fillRect(bx+19+lean, by+19, 2, 2);
+        // Robe body – leaning
+        g.setColor(new Color(80, 0, 130));
+        g.fillRect(bx+8+lean, by+26, 16, 6);
+        // Arms swept back
+        g.setColor(new Color(60, 0, 100));
+        g.fillRect(bx+2, by+24, 7, 3);
+        g.fillRect(bx+4, by+26, 5, 3);
+        // Legs in running pose
+        g.setColor(new Color(60, 0, 100));
+        int step = (frame % 2 == 0) ? 3 : -2;
+        g.fillRect(bx+10+lean+step, by+30, 4, 3);
+        g.fillRect(bx+18+lean-step, by+30, 4, 3);
+    }
+
     // =========================================================================
     // Enemy sprite sheets (64×32, 2 cols × 1 row, 32×32 per frame)
     // =========================================================================
@@ -466,6 +516,159 @@ public final class ResourceGenerator {
         } else {
             g.fillRect(bx+23, by+22, 6, 3);
         }
+    }
+
+    private static void generateSkeletonSheet() {
+        String path = IMG_PATH + "skeleton.png";
+        if (!needsCreate(path)) return;
+        BufferedImage sheet = new BufferedImage(64, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = sheet.createGraphics();
+        // Frame 0: walk
+        drawSkeleton(g, 0, 0, false);
+        // Frame 1: attack (arm raised)
+        drawSkeleton(g, 32, 0, true);
+        g.dispose();
+        saveImage(sheet, path);
+    }
+
+    private static void drawSkeleton(Graphics2D g, int bx, int by, boolean attacking) {
+        // Skull
+        g.setColor(new Color(220, 210, 190));
+        g.fillOval(bx + 10, by + 2, 12, 12);
+        // Eye sockets
+        g.setColor(new Color(40, 10, 10));
+        g.fillOval(bx + 12, by + 5, 3, 4);
+        g.fillOval(bx + 18, by + 5, 3, 4);
+        // Jaw
+        g.setColor(new Color(200, 190, 170));
+        g.fillRect(bx + 12, by + 11, 8, 3);
+        // Ribcage
+        g.setColor(new Color(210, 200, 180));
+        g.fillRect(bx + 12, by + 14, 8, 8);
+        g.setColor(new Color(40, 30, 30));
+        for (int i = 0; i < 3; i++) {
+            g.drawLine(bx + 13, by + 16 + i * 2, bx + 19, by + 16 + i * 2);
+        }
+        // Legs
+        g.setColor(new Color(200, 190, 170));
+        g.fillRect(bx + 12, by + 22, 3, 8);
+        g.fillRect(bx + 17, by + 22, 3, 8);
+        // Arms
+        if (attacking) {
+            g.fillRect(bx + 8, by + 14, 4, 3);
+            g.fillRect(bx + 5, by + 8, 3, 6);
+            // Sword raised
+            g.setColor(new Color(180, 180, 200));
+            g.fillRect(bx + 5, by + 1, 2, 9);
+        } else {
+            g.setColor(new Color(200, 190, 170));
+            g.fillRect(bx + 8, by + 14, 4, 3);
+            g.fillRect(bx + 20, by + 14, 4, 3);
+        }
+    }
+
+    private static void generateSpiderSheet() {
+        String path = IMG_PATH + "spider.png";
+        if (!needsCreate(path)) return;
+        BufferedImage sheet = new BufferedImage(64, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = sheet.createGraphics();
+        // Frame 0: crawl
+        drawSpider(g, 0, 0, false);
+        // Frame 1: leap
+        drawSpider(g, 32, 0, true);
+        g.dispose();
+        saveImage(sheet, path);
+    }
+
+    private static void drawSpider(Graphics2D g, int bx, int by, boolean leaping) {
+        int bodyY = leaping ? by + 10 : by + 14;
+        // Body
+        g.setColor(new Color(50, 35, 25));
+        g.fillOval(bx + 10, bodyY, 12, 8);
+        // Head
+        g.setColor(new Color(60, 40, 30));
+        g.fillOval(bx + 7, bodyY + 1, 7, 6);
+        // Eyes (multiple small red dots)
+        g.setColor(new Color(200, 20, 20));
+        g.fillRect(bx + 8, bodyY + 2, 2, 1);
+        g.fillRect(bx + 11, bodyY + 2, 2, 1);
+        g.fillRect(bx + 8, bodyY + 4, 2, 1);
+        g.fillRect(bx + 11, bodyY + 4, 2, 1);
+        // Legs (4 per side)
+        g.setColor(new Color(45, 30, 20));
+        int legSpread = leaping ? 4 : 2;
+        for (int i = 0; i < 4; i++) {
+            int lx = bx + 11 + i * 3;
+            // Left legs (going up-left)
+            g.drawLine(lx, bodyY + 4, lx - 5 - legSpread, bodyY + 10 + (leaping ? -4 : 0));
+            // Right legs (going up-right)
+            g.drawLine(lx, bodyY + 4, lx + 5 + legSpread, bodyY + 10 + (leaping ? -4 : 0));
+        }
+    }
+
+    private static void generateGhostSheet() {
+        String path = IMG_PATH + "ghost.png";
+        if (!needsCreate(path)) return;
+        BufferedImage sheet = new BufferedImage(64, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = sheet.createGraphics();
+        drawGhost(g, 0, 0);
+        drawGhost(g, 32, 0);
+        g.dispose();
+        saveImage(sheet, path);
+    }
+
+    private static void drawGhost(Graphics2D g, int bx, int by) {
+        // Translucent body
+        g.setColor(new Color(180, 200, 220, 160));
+        g.fillOval(bx + 6, by + 2, 20, 18);
+        // Wavy bottom
+        g.fillRect(bx + 6, by + 15, 20, 6);
+        for (int i = 0; i < 4; i++) {
+            int wx = bx + 7 + i * 5;
+            g.fillOval(wx, by + 18, 5, 8);
+        }
+        // Dark eyes
+        g.setColor(new Color(20, 20, 60, 200));
+        g.fillOval(bx + 11, by + 8, 4, 5);
+        g.fillOval(bx + 18, by + 8, 4, 5);
+        // Mouth
+        g.fillOval(bx + 14, by + 15, 5, 3);
+    }
+
+    private static void generateFireSpiritSheet() {
+        String path = IMG_PATH + "fire_spirit.png";
+        if (!needsCreate(path)) return;
+        BufferedImage sheet = new BufferedImage(64, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = sheet.createGraphics();
+        drawFireSpirit(g, 0, 0);
+        drawFireSpirit(g, 32, 0);
+        g.dispose();
+        saveImage(sheet, path);
+    }
+
+    private static void drawFireSpirit(Graphics2D g, int bx, int by) {
+        // Fiery core
+        g.setColor(new Color(255, 120, 0, 200));
+        g.fillOval(bx + 8, by + 8, 16, 16);
+        g.setColor(new Color(255, 200, 50, 180));
+        g.fillOval(bx + 10, by + 10, 12, 12);
+        g.setColor(new Color(255, 255, 180, 160));
+        g.fillOval(bx + 12, by + 12, 8, 8);
+        // Flame tendrils
+        g.setColor(new Color(255, 80, 0, 150));
+        int[] fx1 = {bx + 10, bx + 14, bx + 18};
+        int[] fy1 = {by + 8, by + 1, by + 8};
+        g.fillPolygon(fx1, fy1, 3);
+        int[] fx2 = {bx + 6, bx + 10, bx + 14};
+        int[] fy2 = {by + 12, by + 4, by + 12};
+        g.fillPolygon(fx2, fy2, 3);
+        int[] fx3 = {bx + 18, bx + 22, bx + 26};
+        int[] fy3 = {by + 12, by + 4, by + 12};
+        g.fillPolygon(fx3, fy3, 3);
+        // Eyes
+        g.setColor(new Color(40, 10, 0));
+        g.fillOval(bx + 13, by + 14, 3, 3);
+        g.fillOval(bx + 18, by + 14, 3, 3);
     }
 
     // =========================================================================

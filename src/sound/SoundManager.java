@@ -1,13 +1,14 @@
 package sound;
 
-import game2D.Sound;
+import javax.sound.sampled.*;
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Centralises all sound effect playback.
- * Sound files are registered by name and played via the library's
- * {@link game2D.Sound} class (standard playback) or the custom
+ * Sound files are registered by name and played with adjustable volume.
+ * Uses {@code javax.sound.sampled} for volume-aware playback and the custom
  * {@link SoundFilter} (echo effect for special events).
  *
  * The echo filter is applied to explosion sounds to give a cave reverb feeling.
@@ -18,6 +19,8 @@ public class SoundManager {
     private final Map<String, String> soundPaths = new HashMap<>();
     /** Whether sound effects are enabled */
     private boolean enabled = true;
+    /** Volume 0-100 as a percentage */
+    private int volume = 80;
 
     /**
      * Registers all game sound effects.
@@ -45,16 +48,17 @@ public class SoundManager {
     }
 
     /**
-     * Plays a sound effect by name.
+     * Plays a sound effect by name with the current volume setting.
      * Starts playback in a background thread so it does not block the game loop.
      *
      * @param name Registered sound name
      */
     public void play(String name) {
-        if (!enabled) return;
+        if (!enabled || volume <= 0) return;
         String path = soundPaths.get(name);
         if (path == null) return;
-        new Sound(path).start();
+        final int vol = volume;
+        new Thread(() -> playWithVolume(path, vol)).start();
     }
 
     /**
@@ -64,14 +68,45 @@ public class SoundManager {
      * @param name Registered sound name
      */
     public void playWithEcho(String name) {
-        if (!enabled) return;
+        if (!enabled || volume <= 0) return;
         String path = soundPaths.get(name);
         if (path == null) {
             play(name);
             return;
         }
         // Cave echo: 0.15s delay, 0.45 decay, 3 repeats
-        new SoundFilter(path, 0.15f, 0.45f, 3).start();
+        new SoundFilter(path, 0.15f, 0.45f, 3, volume / 100f).start();
+    }
+
+    /**
+     * Plays a WAV file at the given volume using javax.sound.sampled.
+     * Uses FloatControl.Type.MASTER_GAIN to set volume as decibels.
+     *
+     * @param path File path relative to working directory
+     * @param vol  Volume percentage 0-100
+     */
+    private void playWithVolume(String path, int vol) {
+        try {
+            File file = new File(path);
+            AudioInputStream stream = AudioSystem.getAudioInputStream(file);
+            AudioFormat format = stream.getFormat();
+            DataLine.Info info = new DataLine.Info(Clip.class, format);
+            Clip clip = (Clip) AudioSystem.getLine(info);
+            clip.open(stream);
+
+            // Convert percentage to decibels (0% = -80dB silence, 100% = 0dB full)
+            if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+                FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+                float dB = 20f * (float) Math.log10(vol / 100f);
+                dB = Math.max(gain.getMinimum(), Math.min(gain.getMaximum(), dB));
+                gain.setValue(dB);
+            }
+
+            clip.start();
+            Thread.sleep(100);
+            while (clip.isRunning()) Thread.sleep(100);
+            clip.close();
+        } catch (Exception ignored) {}
     }
 
     /**
@@ -83,4 +118,14 @@ public class SoundManager {
 
     /** @return True if sound effects are currently enabled */
     public boolean isEnabled() { return enabled; }
+
+    /**
+     * Sets the SFX volume.
+     *
+     * @param vol Volume percentage 0-100
+     */
+    public void setVolume(int vol) { this.volume = Math.max(0, Math.min(100, vol)); }
+
+    /** @return Current volume 0-100 */
+    public int getVolume() { return volume; }
 }

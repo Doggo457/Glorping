@@ -27,8 +27,8 @@ public final class CollisionHandler {
     /** Characters treated as non-solid (passable) */
     private static final String PASSABLE = ".wle";
 
-    /** Slight inset from sprite corners to avoid getting stuck on edges */
-    private static final int INSET = 2;
+    /** Inset from sprite edges to avoid catching on adjacent tiles */
+    private static final int INSET = 6;
 
     /** Prevent instantiation */
     private CollisionHandler() {}

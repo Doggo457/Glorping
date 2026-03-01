@@ -35,6 +35,8 @@ public abstract class Entity extends Sprite {
     protected boolean facingRight = true;
     /** Speed multiplier applied by environmental effects (e.g. water = 0.5) */
     protected float speedMultiplier = 1.0f;
+    /** When true, gravity is not applied (used by grappling hook) */
+    protected boolean gravityDisabled = false;
 
     // =========================================================================
     // Hurt flash
@@ -123,8 +125,8 @@ public abstract class Entity extends Sprite {
      */
     @Override
     public void update(long elapsed) {
-        // Apply gravity if not on the ground and not flying
-        if (!onGround && !isFlying()) {
+        // Apply gravity if not on the ground, not flying, and gravity not disabled
+        if (!onGround && !isFlying() && !gravityDisabled) {
             float newVy = getVelocityY() + GRAVITY * elapsed;
             setVelocityY(Math.min(newVy, MAX_FALL_SPEED));
         }
@@ -205,6 +207,9 @@ public abstract class Entity extends Sprite {
 
     /** @return Current entity state */
     public EntityState getState() { return state; }
+
+    /** Disables or enables gravity for this entity (used by grappling hook). */
+    public void setGravityDisabled(boolean disabled) { gravityDisabled = disabled; }
 
     /** @return True when this entity should not be affected by gravity (e.g. bats) */
     protected boolean isFlying() { return false; }

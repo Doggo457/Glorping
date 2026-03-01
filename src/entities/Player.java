@@ -5,6 +5,9 @@ import projectiles.Projectile;
 import sound.SoundManager;
 import spells.Wand;
 import spells.WandType;
+import java.awt.AlphaComposite;
+import java.awt.Composite;
+import java.awt.Graphics2D;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,9 +55,9 @@ public class Player extends Entity {
     /** Horizontal run speed in px/ms */
     private static final float MOVE_SPEED  = 0.18f;
     /** Initial vertical velocity when jumping (negative = up) */
-    private static final float JUMP_VY     = -0.45f;
+    private static final float JUMP_VY     = -0.36f;
     /** Extra jump for double-jump (slightly weaker) */
-    private static final float DJUMP_VY    = -0.36f;
+    private static final float DJUMP_VY    = -0.28f;
 
     // =========================================================================
     // Jump state
@@ -76,6 +79,16 @@ public class Player extends Entity {
     /** World-space aim target set by mouse position */
     private float aimWorldX = 0;
     private float aimWorldY = 0;
+    /** True while the player is attached to a grappling hook rope */
+    private boolean hooked = false;
+    /** Horizontal swing force applied per ms while hooked */
+    private static final float SWING_FORCE = 0.0003f;
+    /** Invincibility frames timer (ms remaining) */
+    private long iframeTimer = 0;
+    /** Duration of invincibility after being hit (ms) */
+    private static final long IFRAME_DURATION = 600L;
+    /** True on blink-off frames during iframes (used for semi-transparent draw) */
+    private boolean iframeBlink = false;
 
     // =========================================================================
     // Wand inventory
@@ -147,15 +160,27 @@ public class Player extends Entity {
         }
 
         // ---- Horizontal movement ----
-        float moveSpeed = MOVE_SPEED * speedMultiplier;
-        if (moveLeftHeld && !moveRightHeld) {
-            setVelocityX(-moveSpeed);
-            facingRight = false;
-        } else if (moveRightHeld && !moveLeftHeld) {
-            setVelocityX(moveSpeed);
-            facingRight = true;
+        if (hooked) {
+            // While on the rope, A/D add swing force instead of setting velocity.
+            // Releasing keys does NOT zero velocity — momentum is preserved.
+            if (moveLeftHeld && !moveRightHeld) {
+                setVelocityX(getVelocityX() - SWING_FORCE * elapsed);
+                facingRight = false;
+            } else if (moveRightHeld && !moveLeftHeld) {
+                setVelocityX(getVelocityX() + SWING_FORCE * elapsed);
+                facingRight = true;
+            }
         } else {
-            setVelocityX(0);
+            float moveSpeed = MOVE_SPEED * speedMultiplier;
+            if (moveLeftHeld && !moveRightHeld) {
+                setVelocityX(-moveSpeed);
+                facingRight = false;
+            } else if (moveRightHeld && !moveLeftHeld) {
+                setVelocityX(moveSpeed);
+                facingRight = true;
+            } else {
+                setVelocityX(0);
+            }
         }
 
         // ---- Jump ----
@@ -177,12 +202,18 @@ public class Player extends Entity {
         Wand active = getActiveWand();
         if (active != null) active.update(elapsed);
 
+        // ---- Invincibility frames ----
+        if (iframeTimer > 0) iframeTimer = Math.max(0, iframeTimer - elapsed);
+
         // ---- Mana regeneration ----
         manaRegenTimer += elapsed;
         if (manaRegenTimer >= MANA_REGEN_INTERVAL) {
             manaRegenTimer -= MANA_REGEN_INTERVAL;
             mana = Math.min(maxMana, mana + MANA_REGEN_AMOUNT);
         }
+
+        // ---- Invincibility blink (tracked for draw, does NOT hide the sprite) ----
+        iframeBlink = iframeTimer > 0 && (iframeTimer / 80) % 2 == 0;
 
         // ---- Animation selection ----
         updateAnimation(elapsed);
@@ -214,6 +245,22 @@ public class Player extends Entity {
             footstepTimer += elapsed;
         } else {
             setAnimation(idleAnim);
+        }
+    }
+
+    // =========================================================================
+    // Draw (iframe transparency)
+    // =========================================================================
+
+    @Override
+    public void draw(Graphics2D g) {
+        if (iframeBlink) {
+            Composite old = g.getComposite();
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.25f));
+            super.draw(g);
+            g.setComposite(old);
+        } else {
+            super.draw(g);
         }
     }
 
@@ -265,6 +312,8 @@ public class Player extends Entity {
     public boolean isMoveRightHeld() { return moveRightHeld; }
     /** Signals a jump request (consumed once). */
     public void pressJump()                 { jumpPressed = true; }
+    /** Sets whether the player is attached to a grappling hook. */
+    public void setHooked(boolean hooked)   { this.hooked = hooked; }
     /** @param shoot True while the fire button is held */
     public void setShootHeld(boolean shoot) { shootHeld = shoot; }
 
@@ -375,6 +424,24 @@ public class Player extends Entity {
         maxMana += amount;
         mana = Math.min(maxMana, mana + amount);
     }
+
+    // =========================================================================
+    // Invincibility / damage
+    // =========================================================================
+
+    @Override
+    public void takeDamage(int amount) {
+        if (iframeTimer > 0) return;  // still invincible
+        super.takeDamage(amount);
+        // Don't let HURT state stun the player — keep them moving
+        if (alive) {
+            state = EntityState.IDLE;
+            iframeTimer = IFRAME_DURATION;
+        }
+    }
+
+    /** @return True if the player is currently in invincibility frames */
+    public boolean isInvincible() { return iframeTimer > 0; }
 
     // =========================================================================
     // Death hook

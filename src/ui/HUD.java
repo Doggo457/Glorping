@@ -28,6 +28,22 @@ public class HUD {
     private static final Font MSG_FONT  = new Font("Monospaced", Font.PLAIN, 14);
     private static final Font WAND_FONT = new Font("Monospaced", Font.PLAIN, 11);
 
+    // Cached Color objects to avoid per-frame allocation
+    private static final Color BAR_BG        = new Color(0, 0, 0, 160);
+    private static final Color HP_DARK       = new Color(120, 20, 20);
+    private static final Color HP_BRIGHT     = new Color(220, 40, 40);
+    private static final Color MP_DARK       = new Color(20, 50, 160);
+    private static final Color MP_BRIGHT     = new Color(60, 120, 240);
+    private static final Color SLOT_ACTIVE   = new Color(80, 40, 120, 200);
+    private static final Color SLOT_INACTIVE = new Color(30, 30, 50, 160);
+    private static final Color BORDER_ACTIVE = new Color(180, 100, 255);
+    private static final Color BORDER_INACT  = new Color(80, 80, 120);
+    private static final Color TEXT_INACTIVE  = new Color(180, 180, 200);
+    private static final Color COOLDOWN_COLOR = new Color(0, 180, 255, 160);
+    private static final Color GOLD_BG       = new Color(0, 0, 0, 140);
+    private static final Color GOLD_COLOR    = new Color(255, 215, 0);
+    private static final Color MSG_BG        = new Color(0, 0, 0, 160);
+
     // =========================================================================
     // Update
     // =========================================================================
@@ -75,7 +91,7 @@ public class HUD {
 
         drawBar(g, x, y, BAR_W, BAR_H,
                 player.getHealth(), player.getMaxHealth(),
-                new Color(120, 20, 20), new Color(220, 40, 40), "HP");
+                HP_DARK, HP_BRIGHT, "HP");
     }
 
     /** Draws the mana bar next to the health bar. */
@@ -85,7 +101,7 @@ public class HUD {
 
         drawBar(g, x, y, BAR_W, BAR_H,
                 player.getMana(), player.getMaxMana(),
-                new Color(20, 50, 160), new Color(60, 120, 240), "MP");
+                MP_DARK, MP_BRIGHT, "MP");
     }
 
     /**
@@ -107,7 +123,7 @@ public class HUD {
         float frac = max > 0 ? (float) val / max : 0f;
 
         // Background
-        g.setColor(new Color(0, 0, 0, 160));
+        g.setColor(BAR_BG);
         g.fillRoundRect(x - 1, y - 1, w + 2, h + 2, 4, 4);
 
         // Dark track
@@ -150,21 +166,21 @@ public class HUD {
             int y = baseY + i * (slotH + 4);
 
             // Slot background
-            g.setColor(active ? new Color(80, 40, 120, 200) : new Color(30, 30, 50, 160));
+            g.setColor(active ? SLOT_ACTIVE : SLOT_INACTIVE);
             g.fillRoundRect(x, y, slotW, slotH, 4, 4);
 
             // Border
-            g.setColor(active ? new Color(180, 100, 255) : new Color(80, 80, 120));
+            g.setColor(active ? BORDER_ACTIVE : BORDER_INACT);
             g.drawRoundRect(x, y, slotW, slotH, 4, 4);
 
             // Wand name
-            g.setColor(active ? Color.WHITE : new Color(180, 180, 200));
+            g.setColor(active ? Color.WHITE : TEXT_INACTIVE);
             g.drawString((i + 1) + " " + w.getDisplayName(), x + 6, y + slotH - 5);
 
             // Cooldown bar
             if (active && !w.isReady()) {
                 float frac = w.getCooldownFraction();
-                g.setColor(new Color(0, 180, 255, 160));
+                g.setColor(COOLDOWN_COLOR);
                 g.fillRect(x, y + slotH - 3, (int)(slotW * (1f - frac)), 3);
             }
         }
@@ -181,9 +197,9 @@ public class HUD {
         FontMetrics fm = g.getFontMetrics();
         int tw = fm.stringWidth(txt);
 
-        g.setColor(new Color(0, 0, 0, 140));
+        g.setColor(GOLD_BG);
         g.fillRoundRect(screenWidth - tw - MARGIN - 6, TOP_Y - 2, tw + 10, 18, 4, 4);
-        g.setColor(new Color(255, 215, 0));
+        g.setColor(GOLD_COLOR);
         g.drawString(txt, screenWidth - tw - MARGIN, TOP_Y + 12);
     }
 
@@ -210,7 +226,7 @@ public class HUD {
         int x = (screenWidth  - tw) / 2;
         int y = screenHeight / 3;
 
-        g.setColor(new Color(0, 0, 0, 160));
+        g.setColor(MSG_BG);
         g.fillRoundRect(x - 12, y - 18, tw + 24, 28, 6, 6);
         g.setColor(Color.WHITE);
         g.drawString(message, x, y);

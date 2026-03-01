@@ -2,41 +2,43 @@ package utils;
 
 import java.io.*;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.Random;
 
 /**
  * Generates procedural cave levels and saves them as TileMap text files.
- * The cave generation uses a cellular automata algorithm: initialise with
- * random noise, then apply smoothing rules iteratively to produce organic
- * cave shapes.
  *
- * Level 1 – "Shallow Cave": lighter density, mixed stone/dirt, small water pools.
- * Level 2 – "Deep Cavern": denser walls, more gold ore, lava pools instead of water.
+ * The generation pipeline:
+ * 1. High-density cellular automata to create thick cave walls
+ * 2. Carve large elliptical caverns at random locations
+ * 3. Connect all caverns with winding tunnels
+ * 4. Add stalactites and stalagmites along cave edges
+ * 5. Settle liquid pools at the bottom of open spaces
+ * 6. Place floating platforms in tall caverns
+ * 7. Ensure spawn-to-exit connectivity
  */
 public final class MapGenerator {
 
     // Map dimensions in tiles
-    private static final int MAP_W       = 100;
-    private static final int MAP_H       = 40;
-    private static final int TILE_SIZE   = 32;
+    private static final int MAP_W     = 150;
+    private static final int MAP_H     = 60;
+    private static final int TILE_SIZE = 32;
 
-    // Starting zone – keep clear so the player can spawn
-    private static final int SPAWN_CLEAR_X = 5;
-    private static final int SPAWN_CLEAR_Y = MAP_H / 2 - 3;
-    private static final int SPAWN_CLEAR_W = 6;
-    private static final int SPAWN_CLEAR_H = 7;
+    // Border thickness — thick solid edges so it feels enclosed
+    private static final int BORDER = 3;
 
-    /** Prevent instantiation */
+    // Starting zone
+    private static final int SPAWN_CLEAR_X = BORDER + 2;
+    private static final int SPAWN_CLEAR_Y = MAP_H / 2 - 4;
+    private static final int SPAWN_CLEAR_W = 8;
+    private static final int SPAWN_CLEAR_H = 9;
+
     private MapGenerator() {}
 
-    /** Total number of cave levels to generate */
     private static final int NUM_LEVELS = 5;
 
-    /**
-     * Entry point – generates all level map files.
-     * Called from App.main() before the game starts.
-     */
     public static void generate() {
         for (int i = 0; i < NUM_LEVELS; i++) {
             generate(i);
@@ -44,12 +46,6 @@ public final class MapGenerator {
         System.out.println("MapGenerator: " + NUM_LEVELS + " levels ready.");
     }
 
-    /**
-     * Generates (or regenerates) a single level's map file using a random seed.
-     * Levels 0-1 use water, levels 2+ use lava. Deeper levels have more gold.
-     *
-     * @param levelIndex 0-based level index
-     */
     public static void generate(int levelIndex) {
         boolean lava = levelIndex >= 2;
         String path = "maps/level" + (levelIndex + 1) + ".txt";
@@ -57,50 +53,56 @@ public final class MapGenerator {
         generateLevel(path, seed, lava, levelIndex);
     }
 
-    /**
-     * Generates a single level and writes it to disk.
-     * Deeper levels get denser caves and more gold ore.
-     *
-     * @param path       Output file path relative to working directory
-     * @param seed       Random seed for generation
-     * @param lava       True to use lava pools instead of water
-     * @param levelIndex 0-based level index for difficulty scaling
-     */
     private static void generateLevel(String path, long seed, boolean lava, int levelIndex) {
         Random rng = new Random(seed);
-        // ~50% fill — deeper levels slightly denser
-        float density = 0.52f + levelIndex * 0.02f;
-        boolean[][] walls = initNoise(rng, density);
-        for (int i = 0; i < 5; i++) walls = smooth(walls);
 
+        // 1. Cellular automata base — high density = mostly rock
+        float density = 0.62f + levelIndex * 0.015f;
+        boolean[][] walls = initNoise(rng, density);
+        for (int i = 0; i < 7; i++) walls = smooth(walls);
+
+        // 2. Carve large cavern rooms into the rock
+        List<int[]> caverns = carveCaverns(walls, rng, levelIndex);
+
+        // 3. Connect caverns with winding tunnels
+        connectCaverns(walls, caverns, rng);
+
+        // 4. Convert to tile chars
         char[][] tiles = buildTileChars(walls, rng, lava, levelIndex);
+
+        // 5. Add stalactites and stalagmites
+        addFormations(tiles, rng, levelIndex);
+
+        // 6. Settle liquid into pool bottoms
+        settleLiquid(tiles, rng, lava, levelIndex);
+
+        // 7. Spawn/exit zones
         clearSpawnZone(tiles);
         clearExitZone(tiles);
+
+        // 8. Floating platforms in tall open areas
         placeFloatingIslands(tiles, rng, levelIndex);
+
+        // 9. Ensure path connectivity
         if (!isPathConnected(tiles)) {
             carvePath(tiles, rng);
         }
+
         writeMapFile(path, tiles, lava);
     }
 
     // =========================================================================
-    // Cave generation helpers
+    // Cellular automata
     // =========================================================================
 
-    /**
-     * Initialises a boolean wall grid with random noise.
-     * Border cells are always walls to keep the player inside.
-     *
-     * @param rng      Random number generator
-     * @param density  Probability (0–1) that a cell starts as a wall
-     * @return 2D boolean array where true = wall
-     */
     private static boolean[][] initNoise(Random rng, float density) {
         boolean[][] w = new boolean[MAP_W][MAP_H];
         for (int x = 0; x < MAP_W; x++) {
             for (int y = 0; y < MAP_H; y++) {
-                if (x == 0 || x == MAP_W - 1 || y == 0 || y == MAP_H - 1) {
-                    w[x][y] = true; // solid border
+                // Thick solid border
+                if (x < BORDER || x >= MAP_W - BORDER ||
+                    y < BORDER || y >= MAP_H - BORDER) {
+                    w[x][y] = true;
                 } else {
                     w[x][y] = rng.nextFloat() < density;
                 }
@@ -109,36 +111,24 @@ public final class MapGenerator {
         return w;
     }
 
-    /**
-     * Applies one iteration of the cellular automata smoothing rule.
-     * A cell becomes a wall if it has 5 or more wall neighbours.
-     *
-     * @param w Input wall grid
-     * @return Smoothed wall grid
-     */
     private static boolean[][] smooth(boolean[][] w) {
         boolean[][] next = new boolean[MAP_W][MAP_H];
         for (int x = 0; x < MAP_W; x++) {
             for (int y = 0; y < MAP_H; y++) {
-                if (x == 0 || x == MAP_W - 1 || y == 0 || y == MAP_H - 1) {
+                if (x < BORDER || x >= MAP_W - BORDER ||
+                    y < BORDER || y >= MAP_H - BORDER) {
                     next[x][y] = true;
                 } else {
                     int n = countNeighbourWalls(w, x, y);
-                    next[x][y] = (n >= 5);
+                    // Standard rule: become wall if 5+ neighbours are walls
+                    // Also become wall if 0 neighbours are walls (fill isolated dots)
+                    next[x][y] = (n >= 5) || (n == 0);
                 }
             }
         }
         return next;
     }
 
-    /**
-     * Counts the number of wall cells in the 8-directional neighbourhood.
-     *
-     * @param w Wall grid
-     * @param x Tile X
-     * @param y Tile Y
-     * @return Number of neighbouring walls (0–8)
-     */
     private static int countNeighbourWalls(boolean[][] w, int x, int y) {
         int count = 0;
         for (int dx = -1; dx <= 1; dx++) {
@@ -152,46 +142,240 @@ public final class MapGenerator {
         return count;
     }
 
+    // =========================================================================
+    // Cavern carving
+    // =========================================================================
+
     /**
-     * Converts the boolean wall grid to tile characters.
-     * Wall tiles are assigned as stone, dirt, or gold based on random weights.
-     * Deeper levels have more gold ore. Open areas near the bottom get liquid pools.
-     *
-     * @param walls      Boolean wall grid
-     * @param rng        Random source
-     * @param lava       True to use lava instead of water
-     * @param levelIndex Level index for scaling gold frequency
-     * @return 2D char array suitable for writing to a map file
+     * Carves large elliptical cavern rooms into the solid rock.
+     * Returns the centre points so they can be connected with tunnels.
      */
-    private static char[][] buildTileChars(boolean[][] walls, Random rng, boolean lava, int levelIndex) {
+    private static List<int[]> carveCaverns(boolean[][] walls, Random rng, int levelIndex) {
+        List<int[]> centres = new ArrayList<>();
+        int numCaverns = 8 + levelIndex * 2;
+
+        // Always include spawn and exit regions as cavern centres
+        centres.add(new int[]{SPAWN_CLEAR_X + SPAWN_CLEAR_W / 2, MAP_H / 2});
+        centres.add(new int[]{MAP_W - 6, MAP_H / 2});
+
+        for (int i = 0; i < numCaverns; i++) {
+            int cx = BORDER + 10 + rng.nextInt(MAP_W - BORDER * 2 - 20);
+            int cy = BORDER + 5 + rng.nextInt(MAP_H - BORDER * 2 - 10);
+            int radiusX = 5 + rng.nextInt(9);  // 5-13 tiles wide radius
+            int radiusY = 4 + rng.nextInt(6);  // 4-9 tiles tall radius
+            carveEllipse(walls, cx, cy, radiusX, radiusY);
+            centres.add(new int[]{cx, cy});
+        }
+
+        return centres;
+    }
+
+    /** Carves an elliptical open area into the wall grid. */
+    private static void carveEllipse(boolean[][] walls, int cx, int cy, int rx, int ry) {
+        for (int x = cx - rx; x <= cx + rx; x++) {
+            for (int y = cy - ry; y <= cy + ry; y++) {
+                if (x < BORDER || x >= MAP_W - BORDER ||
+                    y < BORDER || y >= MAP_H - BORDER) continue;
+                float dx = (float)(x - cx) / rx;
+                float dy = (float)(y - cy) / ry;
+                if (dx * dx + dy * dy <= 1.0f) {
+                    walls[x][y] = false;
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Tunnel connections
+    // =========================================================================
+
+    /**
+     * Connects all cavern centres with winding tunnels.
+     * Each cavern connects to its nearest unconnected neighbour,
+     * forming a spanning tree so every cavern is reachable.
+     */
+    private static void connectCaverns(boolean[][] walls, List<int[]> caverns, Random rng) {
+        if (caverns.size() < 2) return;
+
+        boolean[] connected = new boolean[caverns.size()];
+        connected[0] = true; // spawn cavern is the root
+
+        for (int iter = 0; iter < caverns.size() - 1; iter++) {
+            int bestFrom = -1, bestTo = -1;
+            double bestDist = Double.MAX_VALUE;
+
+            // Find nearest unconnected cavern to any connected one
+            for (int i = 0; i < caverns.size(); i++) {
+                if (!connected[i]) continue;
+                for (int j = 0; j < caverns.size(); j++) {
+                    if (connected[j]) continue;
+                    double dist = Math.hypot(
+                            caverns.get(i)[0] - caverns.get(j)[0],
+                            caverns.get(i)[1] - caverns.get(j)[1]);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestFrom = i;
+                        bestTo = j;
+                    }
+                }
+            }
+            if (bestTo < 0) break;
+
+            connected[bestTo] = true;
+            carveTunnel(walls, caverns.get(bestFrom), caverns.get(bestTo), rng);
+        }
+    }
+
+    /**
+     * Carves a winding tunnel between two points.
+     * The tunnel is 4-5 tiles wide and meanders with random drift.
+     */
+    private static void carveTunnel(boolean[][] walls, int[] from, int[] to, Random rng) {
+        float x = from[0], y = from[1];
+        float tx = to[0], ty = to[1];
+        int width = 2 + rng.nextInt(2); // radius 2-3 = diameter 4-6
+
+        while (Math.abs(x - tx) > 1 || Math.abs(y - ty) > 1) {
+            // Carve a circle at current position
+            for (int dx = -width; dx <= width; dx++) {
+                for (int dy = -width; dy <= width; dy++) {
+                    if (dx * dx + dy * dy <= width * width) {
+                        int cx = (int)x + dx, cy = (int)y + dy;
+                        if (cx >= BORDER && cx < MAP_W - BORDER &&
+                            cy >= BORDER && cy < MAP_H - BORDER) {
+                            walls[cx][cy] = false;
+                        }
+                    }
+                }
+            }
+
+            // Move toward target with random drift for organic feel
+            float dirX = tx - x, dirY = ty - y;
+            float len = (float)Math.sqrt(dirX * dirX + dirY * dirY);
+            if (len > 0) { dirX /= len; dirY /= len; }
+
+            // Add perpendicular drift
+            float driftAmount = (rng.nextFloat() - 0.5f) * 2.5f;
+            x += dirX * 1.5f + (-dirY) * driftAmount;
+            y += dirY * 1.5f + dirX * driftAmount;
+
+            // Clamp to map
+            x = Math.max(BORDER, Math.min(MAP_W - BORDER - 1, x));
+            y = Math.max(BORDER, Math.min(MAP_H - BORDER - 1, y));
+        }
+    }
+
+    // =========================================================================
+    // Tile assignment
+    // =========================================================================
+
+    private static char[][] buildTileChars(boolean[][] walls, Random rng,
+                                            boolean lava, int levelIndex) {
         char[][] tiles = new char[MAP_W][MAP_H];
-        char liquid = lava ? 'l' : 'w';
-        float goldChance = 0.05f + levelIndex * 0.02f;
+        float goldChance = 0.04f + levelIndex * 0.02f;
 
         for (int x = 0; x < MAP_W; x++) {
             for (int y = 0; y < MAP_H; y++) {
                 if (walls[x][y]) {
+                    // Assign wall material
                     float r = rng.nextFloat();
-                    if (r < goldChance)           tiles[x][y] = 'g'; // gold ore
-                    else if (r < goldChance + 0.23f) tiles[x][y] = 'd'; // dirt
-                    else                          tiles[x][y] = 's'; // stone
+                    if (r < goldChance)                tiles[x][y] = 'g';
+                    else if (r < goldChance + 0.30f)   tiles[x][y] = 'd';
+                    else                               tiles[x][y] = 's';
                 } else {
-                    if (y > MAP_H * 2 / 3 && rng.nextFloat() < 0.08f) {
-                        tiles[x][y] = liquid;
-                    } else {
-                        tiles[x][y] = '.';
-                    }
+                    tiles[x][y] = '.';
                 }
             }
         }
         return tiles;
     }
 
+    // =========================================================================
+    // Cave formations — stalactites & stalagmites
+    // =========================================================================
+
     /**
-     * Clears a rectangular zone near the left side for the player to spawn into.
-     *
-     * @param tiles Tile character grid
+     * Adds stalactites (hanging from ceilings) and stalagmites (rising from floors)
+     * along the edges of open spaces for visual detail.
      */
+    private static void addFormations(char[][] tiles, Random rng, int levelIndex) {
+        float chance = 0.12f + levelIndex * 0.02f;
+
+        for (int x = BORDER; x < MAP_W - BORDER; x++) {
+            for (int y = BORDER; y < MAP_H - BORDER; y++) {
+                if (!isWall(tiles[x][y])) continue;
+
+                // Stalactite: wall tile with open space below
+                if (y + 1 < MAP_H && tiles[x][y + 1] == '.' && rng.nextFloat() < chance) {
+                    int length = 1 + rng.nextInt(3);
+                    for (int dy = 1; dy <= length; dy++) {
+                        int ny = y + dy;
+                        if (ny >= MAP_H - BORDER) break;
+                        if (tiles[x][ny] != '.') break;
+                        tiles[x][ny] = 's';
+                    }
+                }
+
+                // Stalagmite: wall tile with open space above
+                if (y - 1 >= 0 && tiles[x][y - 1] == '.' && rng.nextFloat() < chance) {
+                    int length = 1 + rng.nextInt(2);
+                    for (int dy = 1; dy <= length; dy++) {
+                        int ny = y - dy;
+                        if (ny < BORDER) break;
+                        if (tiles[x][ny] != '.') break;
+                        tiles[x][ny] = 's';
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Liquid pools
+    // =========================================================================
+
+    /**
+     * Creates lakes of liquid in the bottom third of the map.
+     * For each column in the lower zone, scans upward from the floor
+     * and fills open tiles up to a water level, so liquid naturally
+     * pools at the base of caverns forming connected lakes.
+     */
+    private static void settleLiquid(char[][] tiles, Random rng,
+                                      boolean lava, int levelIndex) {
+        char liquid = lava ? 'l' : 'w';
+
+        // Only place liquid in the bottom third of the map
+        int lakeZoneTop = MAP_H * 2 / 3;
+        // Water level: how many tiles above a floor liquid can fill
+        int maxDepth = 3 + levelIndex;
+
+        for (int x = BORDER; x < MAP_W - BORDER; x++) {
+            // Scan upward from the bottom, filling open tiles that sit on solid ground
+            for (int y = MAP_H - BORDER - 1; y >= lakeZoneTop; y--) {
+                if (tiles[x][y] != '.') continue;
+
+                // Must be sitting on solid ground or existing liquid
+                boolean onFloor = (y + 1 >= MAP_H - BORDER) ||
+                                  isWall(tiles[x][y + 1]) ||
+                                  tiles[x][y + 1] == liquid;
+                if (!onFloor) continue;
+
+                // Fill upward from the floor up to maxDepth tiles
+                int filled = 0;
+                for (int ly = y; ly >= lakeZoneTop && filled < maxDepth; ly--) {
+                    if (tiles[x][ly] != '.') break;
+                    tiles[x][ly] = liquid;
+                    filled++;
+                }
+                break; // only fill the lowest cavity per column
+            }
+        }
+    }
+
+    // =========================================================================
+    // Spawn & exit zones
+    // =========================================================================
+
     private static void clearSpawnZone(char[][] tiles) {
         for (int x = SPAWN_CLEAR_X; x < SPAWN_CLEAR_X + SPAWN_CLEAR_W; x++) {
             for (int y = SPAWN_CLEAR_Y; y < SPAWN_CLEAR_Y + SPAWN_CLEAR_H; y++) {
@@ -207,40 +391,36 @@ public final class MapGenerator {
         }
     }
 
-    /**
-     * Places the exit marker tile near the right edge of the map.
-     *
-     * @param tiles Tile character grid
-     */
     private static void clearExitZone(char[][] tiles) {
-        int ex = MAP_W - 4;
+        int ex = MAP_W - 6;
         int midY = MAP_H / 2;
-        for (int y = midY - 3; y <= midY + 3; y++) {
-            if (y >= 0 && y < MAP_H) tiles[ex][y] = '.';
-            if (ex + 1 < MAP_W && y >= 0 && y < MAP_H) tiles[ex + 1][y] = '.';
+        // Clear a wider area for the exit
+        for (int dx = -1; dx <= 2; dx++) {
+            for (int y = midY - 4; y <= midY + 4; y++) {
+                int cx = ex + dx;
+                if (cx >= 0 && cx < MAP_W && y >= 0 && y < MAP_H) {
+                    tiles[cx][y] = '.';
+                }
+            }
         }
         // Floor below exit
-        for (int x = ex; x <= ex + 1; x++) {
-            if (midY + 4 < MAP_H) tiles[x][midY + 4] = 's';
+        for (int dx = -1; dx <= 2; dx++) {
+            int cx = ex + dx;
+            if (cx >= 0 && cx < MAP_W && midY + 5 < MAP_H) {
+                tiles[cx][midY + 5] = 's';
+            }
         }
-        // Exit marker tile
         tiles[ex][midY] = 'e';
     }
 
-    /**
-     * Checks whether the spawn zone and exit zone are connected via passable
-     * tiles using a flood-fill (BFS) from the spawn area.
-     *
-     * @param tiles Tile character grid
-     * @return True if a path exists from spawn to exit
-     */
+    // =========================================================================
+    // Connectivity
+    // =========================================================================
+
     private static boolean isPathConnected(char[][] tiles) {
-        // BFS from centre of spawn zone.
-        // A tile is only reachable if it AND the tile above it are passable
-        // (the player needs at least 2 tiles of vertical clearance).
         int startX = SPAWN_CLEAR_X + SPAWN_CLEAR_W / 2;
         int startY = MAP_H / 2;
-        int exitX  = MAP_W - 4;
+        int exitX  = MAP_W - 6;
         int exitY  = MAP_H / 2;
 
         boolean[][] visited = new boolean[MAP_W][MAP_H];
@@ -257,15 +437,10 @@ public final class MapGenerator {
                 int nx = px + d[0], ny = py + d[1];
                 if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
                 if (visited[nx][ny]) continue;
-                char c = tiles[nx][ny];
-                if (c == '.' || c == 'w' || c == 'l' || c == 'e') {
-                    // Check that the tile above is also passable (player height)
+                if (isPassable(tiles[nx][ny])) {
                     boolean headRoom = true;
-                    if (ny - 1 >= 0) {
-                        char above = tiles[nx][ny - 1];
-                        if (above != '.' && above != 'w' && above != 'l' && above != 'e') {
-                            headRoom = false;
-                        }
+                    if (ny - 1 >= 0 && !isPassable(tiles[nx][ny - 1])) {
+                        headRoom = false;
                     }
                     if (headRoom) {
                         visited[nx][ny] = true;
@@ -278,47 +453,39 @@ public final class MapGenerator {
     }
 
     /**
-     * Carves a wandering path from the spawn zone towards the exit by
-     * punching holes through the thinnest walls. The path meanders
-     * vertically to avoid a straight corridor.
-     *
-     * @param tiles Tile character grid
-     * @param rng   Random source for vertical drift
+     * Carves a wide winding path from spawn to exit as a fallback.
+     * Uses 5-tile-tall clearance and meanders vertically.
      */
     private static void carvePath(char[][] tiles, Random rng) {
         int x = SPAWN_CLEAR_X + SPAWN_CLEAR_W;
         int y = MAP_H / 2;
-        int exitX = MAP_W - 4;
+        int exitX = MAP_W - 6;
         int exitY = MAP_H / 2;
 
         while (x <= exitX) {
-            // Punch a 3-tile-tall hole (player needs head room)
-            for (int dy = -1; dy <= 1; dy++) {
+            // Carve a 5-tile-tall passage
+            for (int dy = -2; dy <= 2; dy++) {
                 int cy = y + dy;
-                if (cy > 0 && cy < MAP_H - 1) {
-                    char c = tiles[x][cy];
-                    if (c != '.' && c != 'e' && c != 'w' && c != 'l') {
+                if (cy > BORDER && cy < MAP_H - BORDER) {
+                    if (isWall(tiles[x][cy])) {
                         tiles[x][cy] = '.';
                     }
                 }
             }
 
-            // Near the exit, steer toward the exit Y to ensure connection
-            if (x >= exitX - 5) {
+            if (x >= exitX - 8) {
+                // Steer toward exit
                 if (y < exitY) y++;
                 else if (y > exitY) y--;
             } else {
-                // Drift vertically to create a natural-looking path
-                int drift = rng.nextInt(3) - 1; // -1, 0, or +1
-                y = Math.max(3, Math.min(MAP_H - 4, y + drift));
+                int drift = rng.nextInt(3) - 1;
+                y = Math.max(BORDER + 3, Math.min(MAP_H - BORDER - 3, y + drift));
 
-                // Sometimes take a larger vertical step for variety
-                if (rng.nextFloat() < 0.15f) {
-                    int bigDrift = rng.nextInt(5) - 2; // -2 to +2
-                    y = Math.max(3, Math.min(MAP_H - 4, y + bigDrift));
+                if (rng.nextFloat() < 0.2f) {
+                    int bigDrift = rng.nextInt(7) - 3;
+                    y = Math.max(BORDER + 3, Math.min(MAP_H - BORDER - 3, y + bigDrift));
                 }
             }
-
             x++;
         }
     }
@@ -327,38 +494,28 @@ public final class MapGenerator {
     // Floating islands
     // =========================================================================
 
-    /**
-     * Places floating stone platforms in open air areas to create parkour
-     * opportunities. More islands are placed in deeper levels.
-     *
-     * @param tiles      Tile character grid
-     * @param rng        Random source
-     * @param levelIndex Level index – deeper = more islands
-     */
     private static void placeFloatingIslands(char[][] tiles, Random rng, int levelIndex) {
-        int numIslands = 12 + levelIndex * 4;
+        int numIslands = 20 + levelIndex * 5;
 
         for (int i = 0; i < numIslands; i++) {
-            int platW = 3 + rng.nextInt(5); // 3–7 tiles wide
-            int px = 8 + rng.nextInt(MAP_W - 16 - platW);
-            int py = 4 + rng.nextInt(MAP_H - 10);
+            int platW = 3 + rng.nextInt(6);
+            int px = BORDER + 6 + rng.nextInt(MAP_W - BORDER * 2 - 12 - platW);
+            int py = BORDER + 4 + rng.nextInt(MAP_H - BORDER * 2 - 8);
 
-            // Only place if the area is mostly open air
+            // Only place if there's a tall open area (at least 5 tiles clear above)
             boolean clear = true;
             for (int dx = -1; dx <= platW && clear; dx++) {
-                for (int dy = -2; dy <= 1 && clear; dy++) {
+                for (int dy = -4; dy <= 1 && clear; dy++) {
                     int cx = px + dx, cy = py + dy;
                     if (cx < 0 || cx >= MAP_W || cy < 0 || cy >= MAP_H) continue;
-                    char c = tiles[cx][cy];
-                    if (c != '.' && dy <= 0) clear = false;
+                    if (isWall(tiles[cx][cy]) && dy <= 0) clear = false;
                 }
             }
             if (!clear) continue;
 
-            // Place the platform
             for (int dx = 0; dx < platW; dx++) {
                 int tx = px + dx;
-                if (tx > 0 && tx < MAP_W - 1) {
+                if (tx > BORDER && tx < MAP_W - BORDER) {
                     tiles[tx][py] = 's';
                 }
             }
@@ -366,30 +523,24 @@ public final class MapGenerator {
     }
 
     // =========================================================================
+    // Tile helpers
+    // =========================================================================
+
+    private static boolean isWall(char c) {
+        return c == 's' || c == 'd' || c == 'g';
+    }
+
+    private static boolean isPassable(char c) {
+        return c == '.' || c == 'w' || c == 'l' || c == 'e';
+    }
+
+    // =========================================================================
     // File writing
     // =========================================================================
 
-    /**
-     * Writes the complete TileMap text file to disk using the expected format:
-     * <pre>
-     * width height tileW tileH
-     * #char=image.png
-     * ...
-     * #map
-     * row0data
-     * row1data
-     * ...
-     * </pre>
-     *
-     * @param path  Destination file path
-     * @param tiles 2D tile character grid
-     * @param lava  True if this level uses lava tiles
-     */
     private static void writeMapFile(String path, char[][] tiles, boolean lava) {
         try (PrintWriter pw = new PrintWriter(new FileWriter(path))) {
-            // Header line
             pw.printf("%d %d %d %d%n", MAP_W, MAP_H, TILE_SIZE, TILE_SIZE);
-            // Character→image mappings
             pw.println("#s=stone.png");
             pw.println("#d=dirt.png");
             pw.println("#g=gold.png");
@@ -400,12 +551,10 @@ public final class MapGenerator {
             }
             pw.println("#e=exit.png");
             pw.println("#map");
-            // Map rows
             for (int y = 0; y < MAP_H; y++) {
                 StringBuilder sb = new StringBuilder(MAP_W);
                 for (int x = 0; x < MAP_W; x++) {
                     char c = tiles[x][y];
-                    // Replace lava/water chars with '.' if the tile type is not used
                     if (!lava && c == 'l') c = '.';
                     if (lava  && c == 'w') c = '.';
                     sb.append(c);

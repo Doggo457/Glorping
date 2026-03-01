@@ -21,6 +21,8 @@ public class SoundFilter extends Thread {
     private final float decay;
     /** Number of echo repetitions */
     private final int numEchoes;
+    /** Overall volume scale (0.0 - 1.0) */
+    private final float volumeScale;
 
     /**
      * Creates a new SoundFilter for the given file with echo parameters.
@@ -29,12 +31,21 @@ public class SoundFilter extends Thread {
      * @param delaySeconds Delay between echoes in seconds (e.g. 0.15 for cave)
      * @param decay        Volume multiplier for each echo (e.g. 0.45)
      * @param numEchoes    Number of echo repetitions (e.g. 3)
+     * @param volumeScale  Overall volume multiplier 0.0 (silent) to 1.0 (full)
      */
-    public SoundFilter(String filename, float delaySeconds, float decay, int numEchoes) {
+    public SoundFilter(String filename, float delaySeconds, float decay, int numEchoes, float volumeScale) {
         this.filename = filename;
         this.delaySeconds = delaySeconds;
         this.decay = decay;
         this.numEchoes = numEchoes;
+        this.volumeScale = Math.max(0f, Math.min(1f, volumeScale));
+    }
+
+    /**
+     * Creates a new SoundFilter at full volume.
+     */
+    public SoundFilter(String filename, float delaySeconds, float decay, int numEchoes) {
+        this(filename, delaySeconds, decay, numEchoes, 1f);
     }
 
     /**
@@ -97,7 +108,16 @@ public class SoundFilter extends Thread {
                 amplitude *= decay;
             }
 
-            // Extend AudioFormat for the full output length
+            // Apply volume scaling to the final output
+            if (volumeScale < 1f) {
+                for (int i = 0; i < totalBytes - 1; i += 2) {
+                    short sample = (short)(((output[i + 1] & 0xFF) << 8) | (output[i] & 0xFF));
+                    sample = (short)(sample * volumeScale);
+                    output[i]     = (byte)(sample & 0xFF);
+                    output[i + 1] = (byte)((sample >> 8) & 0xFF);
+                }
+            }
+
             DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
             SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
             line.open(format, 4096);

@@ -34,6 +34,10 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     public static final int SCREEN_W = 800;
     public static final int SCREEN_H = 600;
 
+    /** Window resolution (can differ from logical SCREEN_W/H; game scales up) */
+    private int windowW = 800;
+    private int windowH = 600;
+
     // =========================================================================
     // Game state
     // =========================================================================
@@ -71,6 +75,10 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     private Animation[] animSlime = new Animation[2];
     private Animation animBatUp, animBatDown;
     private Animation animWizIdle, animWizCast;
+    private Animation[] animSkeleton = new Animation[2];
+    private Animation[] animSpider = new Animation[2];
+    private Animation animGhost;
+    private Animation[] animFireSpirit = new Animation[2];
 
     // Projectiles
     private Map<SpellType, Animation> spellAnims = new EnumMap<>(SpellType.class);
@@ -105,6 +113,10 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
 
     private boolean debug = false;
 
+    // Grappling hook
+    private GrapplingHook grapplingHook = null;
+    private boolean rightMouseDown = false;
+
     // =========================================================================
     // Settings / cheats
     // =========================================================================
@@ -113,7 +125,11 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     private boolean infiniteMana = false;
     private boolean fullscreen   = false;
     private boolean musicEnabled = true;
+    private boolean sfxEnabled   = true;
+    private boolean showFps      = false;
+    private boolean screenShake  = true;
     private GameState preSettingsState = GameState.MENU;
+    private String settingsTab = "main"; // "main", "video", "audio", "gameplay"
     private boolean jumpKeyHeld = false;
 
     // =========================================================================
@@ -122,10 +138,18 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
 
     /** Off-screen buffer for rendering at fixed 800x600 resolution. */
     private BufferedImage renderBuffer;
+    /** Cached graphics context for renderBuffer (avoids per-frame allocation). */
+    private Graphics2D renderG;
     /** Actual pixel width of GameCore's internal buffer (matches window). */
     private int bufferW = SCREEN_W;
     /** Actual pixel height of GameCore's internal buffer (matches window). */
     private int bufferH = SCREEN_H;
+
+    // Cached draw objects to avoid per-frame allocation (reduces GC pressure)
+    private static final Font FPS_FONT = new Font("Monospaced", Font.PLAIN, 12);
+    private static final Font DEBUG_FONT = new Font("Monospaced", Font.PLAIN, 11);
+    private static final Color FPS_COLOR = new Color(200, 200, 200, 180);
+    private static final Color CROSSHAIR_COLOR = new Color(255, 255, 255, 160);
 
     // =========================================================================
     // Entry point
@@ -152,6 +176,9 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         addMouseMotionListener(this);
 
         renderBuffer = new BufferedImage(SCREEN_W, SCREEN_H, BufferedImage.TYPE_INT_ARGB);
+        renderG = renderBuffer.createGraphics();
+        renderG.setClip(0, 0, SCREEN_W, SCREEN_H);
+        renderG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         loadPlayerAnimations();
         loadEnemyAnimations();
@@ -180,6 +207,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         levels[0].populate(player,
                 animSlime, animBatUp, animBatDown,
                 animWizIdle, animWizCast, animEnemyMissile,
+                animSkeleton, animSpider, animGhost, animFireSpirit,
                 animHealthPot, animManaPot, animWandItem, spellAnims);
 
         music.startMusic();
@@ -197,13 +225,13 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         animPlayerDeath    = new Animation();
         animPlayerWallGrab = new Animation();
 
-        animPlayerIdle.loadAnimationSeries(    "images/wizard.png", 4, 5, 150, 0, 4);
-        animPlayerWalk.loadAnimationSeries(    "images/wizard.png", 4, 5, 120, 4, 4);
-        animPlayerJump.loadAnimationSeries(    "images/wizard.png", 4, 5, 180, 8, 4);
-        animPlayerCast.loadAnimationSeries(    "images/wizard.png", 4, 5, 100, 12, 4);
-        animPlayerDeath.loadAnimationSeries(   "images/wizard.png", 4, 5, 200, 8, 4);
+        animPlayerIdle.loadAnimationSeries(    "images/wizard.png", 4, 6, 150, 0, 4);
+        animPlayerWalk.loadAnimationSeries(    "images/wizard.png", 4, 6, 120, 4, 4);
+        animPlayerJump.loadAnimationSeries(    "images/wizard.png", 4, 6, 180, 8, 4);
+        animPlayerCast.loadAnimationSeries(    "images/wizard.png", 4, 6, 100, 12, 4);
+        animPlayerDeath.loadAnimationSeries(   "images/wizard.png", 4, 6, 200, 8, 4);
         animPlayerDeath.setLoop(false);
-        animPlayerWallGrab.loadAnimationSeries("images/wizard.png", 4, 5, 200, 16, 4);
+        animPlayerWallGrab.loadAnimationSeries("images/wizard.png", 4, 6, 200, 16, 4);
     }
 
     private void loadEnemyAnimations() {
@@ -224,6 +252,24 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
 
         animEnemyMissile = new Animation();
         animEnemyMissile.loadAnimationSeries("images/magic_missile.png", 2, 1, 150, 0, 2);
+
+        animSkeleton[0] = new Animation();
+        animSkeleton[1] = new Animation();
+        animSkeleton[0].loadAnimationSeries("images/skeleton.png", 2, 1, 300, 0, 1);
+        animSkeleton[1].loadAnimationSeries("images/skeleton.png", 2, 1, 200, 1, 1);
+
+        animSpider[0] = new Animation();
+        animSpider[1] = new Animation();
+        animSpider[0].loadAnimationSeries("images/spider.png", 2, 1, 200, 0, 1);
+        animSpider[1].loadAnimationSeries("images/spider.png", 2, 1, 150, 1, 1);
+
+        animGhost = new Animation();
+        animGhost.loadAnimationSeries("images/ghost.png", 2, 1, 400, 0, 2);
+
+        animFireSpirit[0] = new Animation();
+        animFireSpirit[1] = new Animation();
+        animFireSpirit[0].loadAnimationSeries("images/fire_spirit.png", 2, 1, 150, 0, 2);
+        animFireSpirit[1].loadAnimationSeries("images/fireball.png", 2, 1, 120, 0, 2);
     }
 
     private void loadSpellAnimations() {
@@ -335,7 +381,22 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                     player.getY() + player.getHeight());
         }
 
+        // Update hook projectile flight (before physics so it can attach this frame)
+        if (grapplingHook != null && grapplingHook.getState() == GrapplingHook.HookState.FLYING) {
+            grapplingHook.update(elapsed, lv.getTileMap(), player);
+            if (!grapplingHook.isActive()) { grapplingHook.restorePlayerGravity(player); grapplingHook = null; }
+        }
+
         player.update(elapsed);
+
+        // Apply rope constraint AFTER player movement but BEFORE tile collision.
+        // This lets the pendulum set velocity/position, then collision resolution
+        // only corrects if the player actually overlaps a tile.
+        if (grapplingHook != null && grapplingHook.getState() == GrapplingHook.HookState.ATTACHED) {
+            grapplingHook.update(elapsed, lv.getTileMap(), player);
+            if (!grapplingHook.isActive()) { grapplingHook.restorePlayerGravity(player); grapplingHook = null; }
+        }
+
         lv.update(elapsed, player, sounds);
 
         String pickupMsg = lv.consumePickupMessage();
@@ -348,6 +409,8 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         particles.update(elapsed);
 
         if (!player.isAlive()) {
+            if (grapplingHook != null) grapplingHook.restorePlayerGravity(player);
+            grapplingHook = null;
             gameState = GameState.DEAD;
             music.stopMusic();
         }
@@ -365,9 +428,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     @Override
     public void draw(Graphics2D bg) {
         // Render everything into the fixed 800x600 buffer
-        Graphics2D g = renderBuffer.createGraphics();
-        g.setClip(0, 0, SCREEN_W, SCREEN_H);
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        Graphics2D g = renderG;
 
         // Feed mouse position to menu (in game-buffer coordinates)
         menu.setMousePos(screenToGameX(mouseScreenX), screenToGameY(mouseScreenY));
@@ -394,8 +455,9 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 menu.drawPauseMenu(g, SCREEN_W, SCREEN_H);
                 break;
             case SETTINGS:
-                menu.drawSettingsMenu(g, SCREEN_W, SCREEN_H, godMode, infiniteMana, fullscreen,
-                        debug, musicEnabled);
+                menu.drawSettingsMenu(g, SCREEN_W, SCREEN_H, settingsTab,
+                        godMode, infiniteMana, fullscreen, debug, musicEnabled,
+                        sfxEnabled, showFps, screenShake, windowW, windowH);
                 break;
             case DEAD:
                 menu.drawDeathScreen(g, SCREEN_W, SCREEN_H, player.getGold());
@@ -423,7 +485,8 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 break;
         }
 
-        g.dispose();
+        // FPS overlay (drawn on top of everything)
+        if (showFps) drawFpsCounter(g);
 
         // Scale the 800x600 renderBuffer into GameCore's actual buffer (bg)
         // In windowed mode bufferW/H == SCREEN_W/H so this is a 1:1 copy.
@@ -440,7 +503,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         int drawY = (bufferH - drawH) / 2;
 
         bg.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         bg.drawImage(renderBuffer, drawX, drawY, drawW, drawH, null);
     }
 
@@ -459,6 +522,11 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         player.setOffsets(xOff, yOff);
         player.drawTransformed(g);
 
+        // Draw grappling hook rope
+        if (grapplingHook != null && grapplingHook.isActive()) {
+            grapplingHook.draw(g, xOff, yOff, player);
+        }
+
         drawCrosshair(g);
     }
 
@@ -474,16 +542,20 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         if (layerX > 0) layerX -= imgW;
 
         int layerY = (int)(yOff * speed * 0.3f);
+        layerY = layerY % imgH;
+        if (layerY > 0) layerY -= imgH;
 
-        for (int dx = layerX; dx < sw; dx += imgW) {
-            g.drawImage(img, dx, layerY, null);
+        for (int dy = layerY; dy < sh; dy += imgH) {
+            for (int dx = layerX; dx < sw; dx += imgW) {
+                g.drawImage(img, dx, dy, null);
+            }
         }
     }
 
     private void drawCrosshair(Graphics2D g) {
         int gx = screenToGameX(mouseScreenX);
         int gy = screenToGameY(mouseScreenY);
-        g.setColor(new Color(255, 255, 255, 160));
+        g.setColor(CROSSHAIR_COLOR);
         int s = 6;
         g.drawLine(gx - s, gy, gx + s, gy);
         g.drawLine(gx, gy - s, gx, gy + s);
@@ -491,7 +563,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     }
 
     private void drawDebugInfo(Graphics2D g) {
-        g.setFont(new Font("Monospaced", Font.PLAIN, 11));
+        g.setFont(DEBUG_FONT);
         g.setColor(Color.YELLOW);
         int x = SCREEN_W - 180;
         Level lv = levels[currentLevelIndex];
@@ -509,6 +581,12 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                    player.getWidth(), player.getHeight());
     }
 
+    private void drawFpsCounter(Graphics2D g) {
+        g.setFont(FPS_FONT);
+        g.setColor(FPS_COLOR);
+        g.drawString(String.format("FPS: %.0f", getFPS()), SCREEN_W - 90, 20);
+    }
+
     // =========================================================================
     // Fullscreen coordinate mapping
     // =========================================================================
@@ -519,7 +597,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
      * In fullscreen the scaled/centred draw area is accounted for.
      */
     private int screenToGameX(int sx) {
-        if (!fullscreen) return sx;
+        if (bufferW == SCREEN_W && bufferH == SCREEN_H) return sx;
         float scaleX = (float) bufferW / SCREEN_W;
         float scaleY = (float) bufferH / SCREEN_H;
         float scale = Math.min(scaleX, scaleY);
@@ -530,7 +608,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
 
     /** Converts a raw mouse Y from the JFrame to the 800x600 game coordinate. */
     private int screenToGameY(int sy) {
-        if (!fullscreen) return sy;
+        if (bufferW == SCREEN_W && bufferH == SCREEN_H) return sy;
         float scaleX = (float) bufferW / SCREEN_W;
         float scaleY = (float) bufferH / SCREEN_H;
         float scale = Math.min(scaleX, scaleY);
@@ -545,8 +623,11 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
 
     /** Advances to the next level, showing shop between levels. */
     private void advanceLevel() {
+        if (grapplingHook != null) grapplingHook.restorePlayerGravity(player);
+        grapplingHook = null;
         currentLevelIndex++;
         if (currentLevelIndex >= TOTAL_LEVELS) {
+            currentLevelIndex = TOTAL_LEVELS - 1; // keep valid for drawWorld
             gameState = GameState.WIN;
             music.stopMusic();
             sounds.playWithEcho("pickup");
@@ -572,6 +653,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         next.populate(player,
                 animSlime, animBatUp, animBatDown,
                 animWizIdle, animWizCast, animEnemyMissile,
+                animSkeleton, animSpider, animGhost, animFireSpirit,
                 animHealthPot, animManaPot, animWandItem, spellAnims);
 
         placePlayerAtSpawn(player, currentLevelIndex);
@@ -601,6 +683,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         levels[0].populate(player,
                 animSlime, animBatUp, animBatDown,
                 animWizIdle, animWizCast, animEnemyMissile,
+                animSkeleton, animSpider, animGhost, animFireSpirit,
                 animHealthPot, animManaPot, animWandItem, spellAnims);
         music.stopMusic();
         if (musicEnabled) music.startMusic();
@@ -638,6 +721,12 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 player.setMoveRight(true); break;
             case KeyEvent.VK_SPACE: case KeyEvent.VK_UP:
                 if (!jumpKeyHeld) {
+                    // Release hook on jump to launch off swing
+                    if (grapplingHook != null) {
+                        grapplingHook.restorePlayerGravity(player);
+                        grapplingHook.release();
+                        grapplingHook = null;
+                    }
                     player.pressJump();
                     sounds.play("jump");
                     jumpKeyHeld = true;
@@ -705,13 +794,25 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 mouseDown = true;
                 player.setShootHeld(true);
             } else {
-                // Handle menu clicks
                 int gx = screenToGameX(e.getX());
                 int gy = screenToGameY(e.getY());
                 String action = menu.handleClick(gx, gy);
                 if (action != null) {
                     handleMenuAction(action);
                 }
+            }
+        } else if (e.getButton() == MouseEvent.BUTTON3) {
+            if (gameState == GameState.PLAYING) {
+                rightMouseDown = true;
+                // Fire grappling hook toward mouse
+                int gx = screenToGameX(e.getX());
+                int gy = screenToGameY(e.getY());
+                float worldAimX = gx - camera.getDrawX();
+                float worldAimY = gy - camera.getDrawY();
+                float px = player.getX() + player.getWidth() / 2f;
+                float py = player.getY() + player.getHeight() / 2f;
+                grapplingHook = new GrapplingHook(px, py, worldAimX, worldAimY);
+                sounds.play("shoot");
             }
         }
     }
@@ -721,6 +822,13 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
         if (e.getButton() == MouseEvent.BUTTON1) {
             mouseDown = false;
             player.setShootHeld(false);
+        } else if (e.getButton() == MouseEvent.BUTTON3) {
+            rightMouseDown = false;
+            if (grapplingHook != null) {
+                grapplingHook.restorePlayerGravity(player);
+                grapplingHook.release();
+                grapplingHook = null;
+            }
         }
     }
 
@@ -751,6 +859,7 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 restartGame(); break;
             case "settings":
                 preSettingsState = gameState == GameState.PAUSED ? GameState.PAUSED : GameState.MENU;
+                settingsTab = "video";
                 gameState = GameState.SETTINGS; break;
             case "quit":
                 stop(); break;
@@ -768,21 +877,51 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
             case "next_level":
                 advanceLevel(); break;
 
-            // Settings toggles
+            // Settings tabs
+            case "tab_video":
+                settingsTab = "video"; break;
+            case "tab_audio":
+                settingsTab = "audio"; break;
+            case "tab_gameplay":
+                settingsTab = "gameplay"; break;
+
+            // Video settings
+            case "toggle_fullscreen":
+                toggleFullscreen(); break;
+            case "toggle_fps":
+                showFps = !showFps; break;
+            case "res_800_600":
+                changeResolution(800, 600); break;
+            case "res_1024_768":
+                changeResolution(1024, 768); break;
+            case "res_1280_720":
+                changeResolution(1280, 720); break;
+            case "res_1920_1080":
+                changeResolution(1920, 1080); break;
+
+            // Audio settings
             case "toggle_music":
                 musicEnabled = !musicEnabled;
                 if (musicEnabled) music.startMusic();
                 else music.stopMusic();
                 break;
-            case "toggle_fullscreen":
-                toggleFullscreen(); break;
+            case "toggle_sfx":
+                sfxEnabled = !sfxEnabled;
+                sounds.setEnabled(sfxEnabled);
+                break;
+
+            // Gameplay settings
             case "toggle_debug":
                 debug = !debug; break;
             case "toggle_god":
                 godMode = !godMode; break;
             case "toggle_mana":
                 infiniteMana = !infiniteMana; break;
+            case "toggle_shake":
+                screenShake = !screenShake; break;
+
             case "back":
+                settingsTab = "video"; // reset to first tab
                 gameState = preSettingsState; break;
 
             // Shop actions
@@ -853,8 +992,21 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     }
 
     // =========================================================================
-    // Fullscreen
+    // Resolution / Fullscreen
     // =========================================================================
+
+    private void changeResolution(int w, int h) {
+        windowW = w;
+        windowH = h;
+        if (fullscreen) {
+            // Exit fullscreen and apply the new windowed resolution
+            toggleFullscreen();
+        } else {
+            setSize(w, h);
+            setLocationRelativeTo(null);
+            resizeGameCoreBuffer(w, h);
+        }
+    }
 
     private void toggleFullscreen() {
         fullscreen = !fullscreen;
@@ -872,12 +1024,12 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
             gd.setFullScreenWindow(null);
             dispose();
             setUndecorated(false);
-            setSize(SCREEN_W, SCREEN_H);
+            setSize(windowW, windowH);
             setLocationRelativeTo(null);
             setVisible(true);
             fullscreen = false;
-            // Restore GameCore's buffer to original 800x600
-            resizeGameCoreBuffer(SCREEN_W, SCREEN_H);
+            // Restore GameCore's buffer to the chosen window resolution
+            resizeGameCoreBuffer(windowW, windowH);
         }
     }
 
@@ -893,6 +1045,10 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
             Field bgField  = GameCore.class.getDeclaredField("bg");
             bufField.setAccessible(true);
             bgField.setAccessible(true);
+
+            // Dispose old graphics to prevent native resource leak
+            Graphics2D oldBg = (Graphics2D) bgField.get(this);
+            if (oldBg != null) oldBg.dispose();
 
             BufferedImage newBuf = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
             Graphics2D newBg = newBuf.createGraphics();

@@ -156,6 +156,10 @@ public class Level {
                          Animation animBatUp, Animation animBatDown,
                          Animation animWizIdle, Animation animWizCast,
                          Animation animMissile,
+                         Animation[] animSkeleton,
+                         Animation[] animSpider,
+                         Animation animGhost,
+                         Animation[] animFireSpirit,
                          Animation animHealthPot, Animation animManaPot,
                          Animation animWandItem,
                          Map<SpellType, Animation> spellAnims) {
@@ -167,13 +171,12 @@ public class Level {
         int mapH = tmap.getMapHeight();
         int tw   = tmap.getTileWidth();
         int th   = tmap.getTileHeight();
+        Random rng = new Random();
 
-        // Scatter slimes evenly across the map
-        int slimeCount = 6 + levelIndex * 3;
-        int slimeSpacing = Math.max(1, (mapW - 20) / (slimeCount + 1));
+        // --- Slimes: scattered across the whole map ---
+        int slimeCount = 8 + levelIndex * 2;
         for (int i = 0; i < slimeCount; i++) {
-            int startX = 12 + i * slimeSpacing;
-            int[] pos = findOpenFloor(startX, mapH);
+            int[] pos = findOpenFloor(0, mapH);
             if (pos != null) {
                 Slime s = new Slime(animSlime[0], animSlime[1], player);
                 s.setPosition(pos[0] * tw, pos[1] * th - s.getHeight());
@@ -181,12 +184,10 @@ public class Level {
             }
         }
 
-        // Bats spread across the map in upper cave regions
-        int batCount = 3 + levelIndex * 2;
-        int batSpacing = Math.max(1, (mapW - 20) / (batCount + 1));
+        // --- Bats: upper cave regions ---
+        int batCount = 7 + levelIndex * 2;
         for (int i = 0; i < batCount; i++) {
-            int startX = 15 + i * batSpacing;
-            int[] pos = findOpenSpace(startX, mapH / 2);
+            int[] pos = findOpenSpace(0, mapH / 2);
             if (pos != null) {
                 Bat b = new Bat(animBatUp, animBatDown, player);
                 b.setPosition(pos[0] * tw, pos[1] * th);
@@ -194,16 +195,58 @@ public class Level {
             }
         }
 
-        // Wizard enemies (ranged) spread across the right two-thirds
-        int wizCount = 2 + levelIndex;
-        int wizSpacing = Math.max(1, (mapW / 2) / (wizCount + 1));
+        // --- Wizards: spread across map ---
+        int wizCount = 4 + levelIndex * 1;
         for (int i = 0; i < wizCount; i++) {
-            int startX = mapW / 3 + i * wizSpacing;
-            int[] pos = findOpenFloor(startX, mapH);
+            int[] pos = findOpenFloor(0, mapH);
             if (pos != null) {
                 WizardEnemy w = new WizardEnemy(animWizIdle, animWizCast, animMissile, player);
                 w.setPosition(pos[0] * tw, pos[1] * th - w.getHeight());
                 enemies.add(w);
+            }
+        }
+
+        // --- Skeletons: tough ground melee ---
+        int skelCount = 5 + levelIndex * 2;
+        for (int i = 0; i < skelCount; i++) {
+            int[] pos = findOpenFloor(0, mapH);
+            if (pos != null) {
+                Skeleton sk = new Skeleton(animSkeleton[0], animSkeleton[1], player);
+                sk.setPosition(pos[0] * tw, pos[1] * th - sk.getHeight());
+                enemies.add(sk);
+            }
+        }
+
+        // --- Spiders: fast ground swarmers ---
+        int spiderCount = 8 + levelIndex * 2;
+        for (int i = 0; i < spiderCount; i++) {
+            int[] pos = findOpenFloor(0, mapH);
+            if (pos != null) {
+                Spider sp = new Spider(animSpider[0], animSpider[1], player);
+                sp.setPosition(pos[0] * tw, pos[1] * th - sp.getHeight());
+                enemies.add(sp);
+            }
+        }
+
+        // --- Ghosts: floating throughout open spaces ---
+        int ghostCount = 4 + levelIndex * 2;
+        for (int i = 0; i < ghostCount; i++) {
+            int[] pos = findOpenSpace(0, mapH);
+            if (pos != null) {
+                Ghost gh = new Ghost(animGhost, player);
+                gh.setPosition(pos[0] * tw, pos[1] * th);
+                enemies.add(gh);
+            }
+        }
+
+        // --- Fire Spirits: flying ranged ---
+        int fireCount = 3 + levelIndex * 1;
+        for (int i = 0; i < fireCount; i++) {
+            int[] pos = findOpenSpace(0, mapH);
+            if (pos != null) {
+                FireSpirit fs = new FireSpirit(animFireSpirit[0], animFireSpirit[1], player);
+                fs.setPosition(pos[0] * tw, pos[1] * th);
+                enemies.add(fs);
             }
         }
 
@@ -319,6 +362,8 @@ public class Level {
             CollisionHandler.resolveEntityTileCollision(e, tmap);
             applyEnvironmentEffect(e);
             e.runAI(tmap);
+            // Re-resolve after AI so flying enemies' shiftX/shiftY can't push through walls
+            CollisionHandler.resolveEntityTileCollision(e, tmap);
 
             // Collect projectiles fired by this enemy
             for (Projectile p : e.drainPendingProjectiles()) {
@@ -350,6 +395,7 @@ public class Level {
                 // All projectiles mine tiles; explosions use AoE radius
                 if (p.getType() == SpellType.EXPLODE) {
                     destroyTilesAround(p, 1, player);
+                    if (p.isPlayerOwned()) explosionDamageEnemies(p.getCentreX(), p.getCentreY(), p.getDamage());
                     particles.spawnExplosion(p.getCentreX(), p.getCentreY());
                     sounds.playWithEcho("explosion");
                 } else {
@@ -369,6 +415,12 @@ public class Level {
                         e.takeDamage(p.getDamage());
                         sounds.play("hit");
                         spawnImpactParticles(p);
+                        // Explosions also deal AOE damage to nearby enemies
+                        if (p.getType() == SpellType.EXPLODE) {
+                            explosionDamageEnemies(p.getCentreX(), p.getCentreY(), p.getDamage());
+                            particles.spawnExplosion(p.getCentreX(), p.getCentreY());
+                            sounds.playWithEcho("explosion");
+                        }
                         p.deactivate();
                         break;
                     }
@@ -466,6 +518,24 @@ public class Level {
         }
     }
 
+    /** Damages all living enemies within a pixel radius of the explosion centre. */
+    private static final float EXPLOSION_RADIUS = 64f; // ~2 tiles
+    private void explosionDamageEnemies(float cx, float cy, int damage) {
+        for (Enemy e : enemies) {
+            if (!e.isAlive()) continue;
+            float ex = e.getX() + e.getWidth() / 2f;
+            float ey = e.getY() + e.getHeight() / 2f;
+            float dx = ex - cx;
+            float dy = ey - cy;
+            float dist = (float) Math.sqrt(dx * dx + dy * dy);
+            if (dist < EXPLOSION_RADIUS) {
+                // Full damage at centre, half at edge
+                float falloff = 1f - (dist / EXPLOSION_RADIUS) * 0.5f;
+                e.takeDamage((int)(damage * falloff));
+            }
+        }
+    }
+
     /**
      * Detects whether the player is pressing into a wall while airborne.
      * Uses a velocity-based check: after collision resolution, if the player
@@ -522,7 +592,7 @@ public class Level {
         int tx = (int)(cx / tmap.getTileWidth());
         int ty = (int)(cy / tmap.getTileHeight());
         if (tmap.valid(tx, ty) && tmap.getTileChar(tx, ty) == 'l') {
-            entity.takeDamage(1);
+            entity.takeDamage(30);
         }
     }
 
@@ -680,7 +750,7 @@ public class Level {
             }
         }
 
-        for (Enemy e : enemies) {
+        for (Enemy e : new ArrayList<>(enemies)) {
             if (e.isAlive()) {
                 e.setOffsets(xOffset, yOffset);
                 e.drawTransformed(g);
@@ -699,7 +769,7 @@ public class Level {
             }
         }
 
-        for (Projectile p : projectiles) {
+        for (Projectile p : new ArrayList<>(projectiles)) {
             if (p.isActive()) {
                 p.setOffsets(xOffset, yOffset);
                 p.draw(g);
@@ -731,11 +801,18 @@ public class Level {
      * @param maxY   Maximum tile Y to search
      * @return [tileX, tileY] of the open floor, or null if not found
      */
+    /** Minimum tile distance from player spawn for enemy placement */
+    private static final int SPAWN_EXCLUSION = 10;
+
     private int[] findOpenFloor(int startX, int maxY) {
-        int x = MathUtils.clamp(startX, 2, tmap.getMapWidth() - 3);
-        for (int tries = 0; tries < 50; tries++) {
-            int tx = MathUtils.clamp(x + tries, 2, tmap.getMapWidth() - 3);
+        Random rng = new Random();
+        int minX = 2, maxX = tmap.getMapWidth() - 3;
+        int spawnTX = (int)(spawnX / tmap.getTileWidth());
+        int spawnTY = (int)(spawnY / tmap.getTileHeight());
+        for (int tries = 0; tries < 60; tries++) {
+            int tx = minX + rng.nextInt(Math.max(1, maxX - minX));
             for (int ty = 3; ty < maxY - 1; ty++) {
+                if (Math.abs(tx - spawnTX) + Math.abs(ty - spawnTY) < SPAWN_EXCLUSION) continue;
                 char above = tmap.getTileChar(tx, ty);
                 char below = tmap.getTileChar(tx, ty + 1);
                 char twoAbove = tmap.getTileChar(tx, ty - 1);
@@ -760,10 +837,15 @@ public class Level {
      * @return [tileX, tileY] or null
      */
     private int[] findOpenSpace(int startX, int maxY) {
-        int x = MathUtils.clamp(startX, 2, tmap.getMapWidth() - 3);
-        for (int tries = 0; tries < 40; tries++) {
-            int tx = MathUtils.clamp(x + tries, 2, tmap.getMapWidth() - 3);
-            for (int ty = 2; ty < Math.min(maxY, tmap.getMapHeight() - 2); ty++) {
+        Random rng = new Random();
+        int minX = 2, maxX = tmap.getMapWidth() - 3;
+        int maxTy = Math.min(maxY, tmap.getMapHeight() - 2);
+        int spawnTX = (int)(spawnX / tmap.getTileWidth());
+        int spawnTY = (int)(spawnY / tmap.getTileHeight());
+        for (int tries = 0; tries < 60; tries++) {
+            int tx = minX + rng.nextInt(Math.max(1, maxX - minX));
+            for (int ty = 2; ty < maxTy; ty++) {
+                if (Math.abs(tx - spawnTX) + Math.abs(ty - spawnTY) < SPAWN_EXCLUSION) continue;
                 if (tmap.getTileChar(tx, ty) == '.') {
                     long key = tileKey(tx, ty);
                     if (!usedSpawnTiles.contains(key)) {
