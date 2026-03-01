@@ -479,7 +479,8 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
                 hud.draw(g, player, SCREEN_W, SCREEN_H);
                 menu.drawShopMenu(g, SCREEN_W, SCREEN_H,
                         player.getGold(), player.getMaxHealth(), player.getMaxMana(),
-                        shopWand);
+                        shopWand, player.getWands().size(),
+                        player.getActiveWand() != null ? player.getActiveWand().getDisplayName() : "");
                 break;
             default:
                 break;
@@ -979,13 +980,16 @@ public class GlorpingGame extends GameCore implements MouseListener, MouseMotion
     private void buyShopWand() {
         if (shopWand == null) return;
         int cost = 15 + shopWand.getManaCost() * 2;
-        if (player.getWands().size() >= 4) {
-            hud.showMessage("Inventory full! (4 wands max)", 1500);
-            return;
-        }
         if (player.spendGold(cost)) {
-            player.addWand(shopWand);
-            hud.showMessage("Bought " + shopWand.getDisplayName() + "!", 1500);
+            if (player.getWands().size() >= 4) {
+                // Inventory full — swap out the currently active wand
+                Wand old = player.swapActiveWand(shopWand);
+                hud.showMessage("Swapped " + old.getDisplayName() + " for "
+                        + shopWand.getDisplayName() + "!", 2000);
+            } else {
+                player.addWand(shopWand);
+                hud.showMessage("Bought " + shopWand.getDisplayName() + "!", 1500);
+            }
             sounds.play("pickup");
             shopWand = null; // can only buy once
         }

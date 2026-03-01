@@ -105,8 +105,16 @@ public class Slime extends Enemy {
                 hopCooldown = IDLE_HOP_INTERVAL + (long)(Math.random() * 800);
             }
         } else if (!onGround) {
-            // Air drag
-            setVelocityX(getVelocityX() * 0.98f);
+            // Air control — steer toward player or wander dir to escape holes
+            float airVx = getVelocityX();
+            if (aggro) {
+                float dx = (target.getX() + target.getWidth() / 2f)
+                         - (getX() + getWidth() / 2f);
+                float nudge = (dx > 0 ? 1f : -1f) * speed * 0.1f;
+                setVelocityX(airVx * 0.98f + nudge);
+            } else {
+                setVelocityX(airVx * 0.98f + wanderDir * speed * 0.08f);
+            }
         } else {
             // On ground, waiting for cooldown
             setVelocityX(0);

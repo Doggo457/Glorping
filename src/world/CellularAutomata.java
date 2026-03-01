@@ -25,9 +25,9 @@ import java.util.List;
 public class CellularAutomata {
 
     /** Milliseconds between simulation ticks */
-    private static final long TICK_INTERVAL = 120L;
+    private static final long TICK_INTERVAL = 30L;
     /** Maximum number of tiles to simulate per tick */
-    private static final int  MAX_PER_TICK   = 30;
+    private static final int  MAX_PER_TICK   = 150;
 
     private long tickTimer = 0;
     /** Accumulated list of known liquid tile positions [x, y] pairs */
@@ -120,28 +120,32 @@ public class CellularAutomata {
             char self = tmap.getTileChar(x, y);
             if (self != 'w' && self != 'l') { toRemove.add(pos); continue; }
 
-            // Try to fall down
-            if (tmap.valid(x, y + 1) && tmap.getTileChar(x, y + 1) == '.') {
-                tmap.setTileChar(self, x, y + 1);
-                tmap.setTileChar('.', x, y);
-                toRemove.add(pos);
-                toAdd.add(new int[]{x, y + 1});
+            // 1) Try to fall straight down
+            if (isEmpty(tmap, x, y + 1)) {
+                moveTile(tmap, self, x, y, x, y + 1, pos, toRemove, toAdd);
                 continue;
             }
 
-            // Try to flow sideways (random left/right bias)
+            // 2) Try to fall diagonally (down-left / down-right)
             boolean tryLeft = rng.nextBoolean();
             int d1 = tryLeft ? -1 : 1;
             int d2 = -d1;
+            if (isEmpty(tmap, x + d1, y + 1)) {
+                moveTile(tmap, self, x, y, x + d1, y + 1, pos, toRemove, toAdd);
+                continue;
+            }
+            if (isEmpty(tmap, x + d2, y + 1)) {
+                moveTile(tmap, self, x, y, x + d2, y + 1, pos, toRemove, toAdd);
+                continue;
+            }
 
-            boolean moved = false;
+            // 3) Spread sideways — but only if there's a drop-off reachable
+            //    in that direction (prevents pointless jitter on flat surfaces)
+            boolean movedSide = false;
             for (int d : new int[]{d1, d2}) {
-                if (tmap.valid(x + d, y) && tmap.getTileChar(x + d, y) == '.') {
-                    tmap.setTileChar(self, x + d, y);
-                    tmap.setTileChar('.', x, y);
-                    toRemove.add(pos);
-                    toAdd.add(new int[]{x + d, y});
-                    moved = true;
+                if (isEmpty(tmap, x + d, y) && canReachDrop(tmap, x + d, y, d, self)) {
+                    moveTile(tmap, self, x, y, x + d, y, pos, toRemove, toAdd);
+                    movedSide = true;
                     break;
                 }
             }
@@ -149,5 +153,39 @@ public class CellularAutomata {
 
         liquidTiles.removeAll(toRemove);
         liquidTiles.addAll(toAdd);
+    }
+
+    /** Checks if a tile position is valid and empty. */
+    private boolean isEmpty(TileMap tmap, int x, int y) {
+        return tmap.valid(x, y) && tmap.getTileChar(x, y) == '.';
+    }
+
+    /** Moves a liquid tile from (ox,oy) to (nx,ny), updating tracking lists. */
+    private void moveTile(TileMap tmap, char self, int ox, int oy, int nx, int ny,
+                          int[] pos, List<int[]> toRemove, List<int[]> toAdd) {
+        tmap.setTileChar(self, nx, ny);
+        tmap.setTileChar('.', ox, oy);
+        toRemove.add(pos);
+        toAdd.add(new int[]{nx, ny});
+    }
+
+    /**
+     * Scans sideways from (x,y) in direction dx to see if there's an empty
+     * tile below within a short range. This prevents water from jittering
+     * sideways on a flat settled surface — it only flows if it can actually
+     * reach a lower point.
+     */
+    private boolean canReachDrop(TileMap tmap, int x, int y, int dx, char self) {
+        // Check up to 5 tiles ahead for a drop-off
+        for (int i = 0; i < 5; i++) {
+            if (!tmap.valid(x, y)) return false;
+            char c = tmap.getTileChar(x, y);
+            // Hit a wall — no drop reachable this way
+            if (c != '.' && c != self) return false;
+            // Found a drop-off below this position
+            if (isEmpty(tmap, x, y + 1)) return true;
+            x += dx;
+        }
+        return false;
     }
 }

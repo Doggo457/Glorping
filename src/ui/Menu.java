@@ -339,7 +339,8 @@ public class Menu {
      * Draws the shop screen showing available upgrades.
      */
     public void drawShopMenu(Graphics2D g, int screenWidth, int screenHeight,
-                              int gold, int maxHealth, int maxMana, Wand shopWand) {
+                              int gold, int maxHealth, int maxMana, Wand shopWand,
+                              int wandCount, String activeWandName) {
         buttons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.80f);
 
@@ -354,17 +355,19 @@ public class Menu {
         int healCost = 10;
 
         drawShopItem(g, screenWidth, optY,
-                "Max Health +20", "Currently: " + maxHealth, hpCost, gold, "buy_hp");
+                "Max Health +20", "Currently: " + maxHealth, null, hpCost, gold, "buy_hp");
         drawShopItem(g, screenWidth, optY + 65,
-                "Max Mana +20", "Currently: " + maxMana, mpCost, gold, "buy_mp");
+                "Max Mana +20", "Currently: " + maxMana, null, mpCost, gold, "buy_mp");
         drawShopItem(g, screenWidth, optY + 130,
-                "Full Heal", "Restore all HP & MP", healCost, gold, "buy_heal");
+                "Full Heal", "Restore all HP & MP", null, healCost, gold, "buy_heal");
 
         // Random wand for sale
         if (shopWand != null) {
             int wandCost = 15 + shopWand.getManaCost() * 2;
+            String subtitle = "Mana/shot: " + shopWand.getManaCost();
+            String swapHint = wandCount >= 4 ? "Replaces " + activeWandName : null;
             drawShopItem(g, screenWidth, optY + 195,
-                    shopWand.getDisplayName(), "Mana/shot: " + shopWand.getManaCost(),
+                    shopWand.getDisplayName(), subtitle, swapHint,
                     wandCost, gold, "buy_wand");
         } else {
             // Already bought
@@ -456,10 +459,13 @@ public class Menu {
         buttons.add(new MenuButton(rect, action));
     }
 
-    /** Draws a shop item row with name, description, cost, and buy button. */
+    /** Draws a shop item row with name, description, optional swap hint, cost, and buy button. */
     private void drawShopItem(Graphics2D g, int screenWidth, int y,
-                                String name, String desc, int cost, int gold, String action) {
+                                String name, String desc, String swapHint,
+                                int cost, int gold, String action) {
         boolean canAfford = gold >= cost;
+        boolean hasHint = swapHint != null && !swapHint.isEmpty();
+        int panelH = hasHint ? 68 : 55;
 
         g.setFont(BODY_FONT);
         FontMetrics fm = g.getFontMetrics();
@@ -468,9 +474,9 @@ public class Menu {
 
         // Background panel
         g.setColor(new Color(40, 30, 60, 180));
-        g.fillRoundRect(bx, y, totalW, 55, 10, 10);
+        g.fillRoundRect(bx, y, totalW, panelH, 10, 10);
         g.setColor(new Color(100, 80, 140, 120));
-        g.drawRoundRect(bx, y, totalW, 55, 10, 10);
+        g.drawRoundRect(bx, y, totalW, panelH, 10, 10);
 
         // Item name and description
         g.setColor(Color.WHITE);
@@ -479,12 +485,18 @@ public class Menu {
         g.setColor(new Color(170, 160, 190));
         g.drawString(desc, bx + 15, y + 42);
 
+        // Swap hint on a third line
+        if (hasHint) {
+            g.setColor(new Color(255, 180, 80));
+            g.drawString(swapHint, bx + 15, y + 58);
+        }
+
         // Buy button on the right
         String buyLabel = cost + " G";
         g.setFont(BODY_FONT);
         int buyW = fm.stringWidth(buyLabel) + 20;
         int buyX = bx + totalW - buyW - 10;
-        int buyY = y + 12;
+        int buyY = y + (panelH - 30) / 2;
         int buyH = 30;
 
         Rectangle buyRect = new Rectangle(buyX, buyY, buyW, buyH);

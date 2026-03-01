@@ -85,8 +85,10 @@ public class Spider extends Enemy {
                     setAnimation(leapAnim);
                 }
             } else {
-                // In air from leap
-                setVelocityX(getVelocityX() * 0.99f);
+                // In air — steer toward player to escape holes
+                float airVx = getVelocityX();
+                float nudge = dirX * speed * 0.12f;
+                setVelocityX(airVx * 0.99f + nudge);
                 setAnimation(leapAnim);
             }
         } else {
