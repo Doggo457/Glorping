@@ -48,7 +48,7 @@ public final class MapGenerator {
 
     public static void generate(int levelIndex) {
         boolean lava = levelIndex >= 2;
-        String path = "maps/level" + (levelIndex + 1) + ".txt";
+        String path = "src/resources/maps/level" + (levelIndex + 1) + ".txt";
         long seed = System.nanoTime() ^ (levelIndex * 0x9E3779B97F4A7C15L);
         generateLevel(path, seed, lava, levelIndex);
     }

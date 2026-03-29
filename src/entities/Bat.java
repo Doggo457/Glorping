@@ -98,8 +98,8 @@ public class Bat extends Enemy {
         // Perpendicular unit vector: rotate (dx,dy) by 90°
         float px = -dy / len;
         float py =  dx / len;
-        shiftX(px * sineD * SINE_AMP);
-        shiftY(py * sineD * SINE_AMP);
+        safeShiftX(tmap, px * sineD * SINE_AMP);
+        safeShiftY(tmap, py * sineD * SINE_AMP);
 
         setVelocityX(bvx);
         setVelocityY(bvy);

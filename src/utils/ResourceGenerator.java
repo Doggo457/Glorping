@@ -18,11 +18,11 @@ import java.io.*;
 public final class ResourceGenerator {
 
     /** Base path for image assets relative to working directory */
-    private static final String IMG_PATH   = "images/";
+    private static final String IMG_PATH   = "src/resources/images/";
     /** Base path for map tile images */
-    private static final String MAP_PATH   = "maps/";
+    private static final String MAP_PATH   = "src/resources/maps/";
     /** Base path for sound assets */
-    private static final String SND_PATH   = "sounds/";
+    private static final String SND_PATH   = "src/resources/sounds/";
 
     /** Prevent instantiation */
     private ResourceGenerator() {}

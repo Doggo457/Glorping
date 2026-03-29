@@ -24,17 +24,17 @@ public class SoundManager {
 
     /**
      * Registers all game sound effects.
-     * Paths are relative to the working directory (lib/handout/).
+     * Paths are relative to the project root directory.
      */
     public SoundManager() {
-        register("shoot",        "sounds/shoot.wav");
-        register("hit",          "sounds/hit.wav");
-        register("player_death", "sounds/player_death.wav");
-        register("jump",         "sounds/jump.wav");
-        register("pickup",       "sounds/pickup.wav");
-        register("enemy_death",  "sounds/enemy_death.wav");
-        register("explosion",    "sounds/explosion.wav");
-        register("footstep",     "sounds/footstep.wav");
+        register("shoot",        "src/resources/sounds/shoot.wav");
+        register("hit",          "src/resources/sounds/hit.wav");
+        register("player_death", "src/resources/sounds/player_death.wav");
+        register("jump",         "src/resources/sounds/jump.wav");
+        register("pickup",       "src/resources/sounds/pickup.wav");
+        register("enemy_death",  "src/resources/sounds/enemy_death.wav");
+        register("explosion",    "src/resources/sounds/explosion.wav");
+        register("footstep",     "src/resources/sounds/footstep.wav");
     }
 
     /**

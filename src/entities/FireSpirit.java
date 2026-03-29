@@ -86,8 +86,8 @@ public class FireSpirit extends Enemy {
         float sineD = curSine - prevSine;
         prevSine = curSine;
         float px = -dy / len, py = dx / len;
-        shiftX(px * sineD * SINE_AMP);
-        shiftY(py * sineD * SINE_AMP);
+        safeShiftX(tmap, px * sineD * SINE_AMP);
+        safeShiftY(tmap, py * sineD * SINE_AMP);
 
         // Shoot fireballs with shot leading
         if (attackCooldown <= 0 && dist < 300 && hasLineOfSight(tmap)) {

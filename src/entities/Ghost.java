@@ -42,7 +42,7 @@ public class Ghost extends Enemy {
             // Gentle idle bob
             bobPhase += BOB_SPEED * elapsed;
             float curBob = (float) Math.sin(bobPhase);
-            shiftY((curBob - prevBob) * BOB_AMP * 0.3f);
+            safeShiftY(tmap, (curBob - prevBob) * BOB_AMP * 0.3f);
             prevBob = curBob;
             return;
         }
@@ -77,7 +77,7 @@ public class Ghost extends Enemy {
         // Eerie vertical bobbing while pursuing
         bobPhase += BOB_SPEED * elapsed;
         float curBob = (float) Math.sin(bobPhase);
-        shiftY((curBob - prevBob) * BOB_AMP);
+        safeShiftY(tmap, (curBob - prevBob) * BOB_AMP);
         prevBob = curBob;
 
         facingRight = dx > 0;

@@ -28,8 +28,10 @@ public class Menu {
     /** Current mouse position for hover detection */
     private int mouseX, mouseY;
 
-    /** Buttons registered during the last draw call */
-    private final List<MenuButton> buttons = new ArrayList<>();
+    /** Buttons registered during the last draw call (swapped atomically after draw) */
+    private volatile List<MenuButton> buttons = new ArrayList<>();
+    /** Temporary list built during a draw call, then swapped into buttons */
+    private List<MenuButton> pendingButtons = new ArrayList<>();
 
 
     // =========================================================================
@@ -46,6 +48,11 @@ public class Menu {
         }
     }
 
+    /** Atomically publishes the buttons built during the last draw call. */
+    private void publishButtons() {
+        buttons = new ArrayList<>(pendingButtons);
+    }
+
     /** Sets the current mouse position for hover highlighting. */
     public void setMousePos(int x, int y) {
         mouseX = x;
@@ -57,7 +64,10 @@ public class Menu {
      * @return The action string of the clicked button, or null if none hit.
      */
     public String handleClick(int x, int y) {
-        for (MenuButton btn : buttons) {
+        // Snapshot to avoid ConcurrentModificationException — the draw thread
+        // rebuilds the list each frame while the AWT event thread calls this.
+        List<MenuButton> snapshot = new ArrayList<>(buttons);
+        for (MenuButton btn : snapshot) {
             if (btn.bounds.contains(x, y)) {
                 return btn.action;
             }
@@ -78,7 +88,7 @@ public class Menu {
     // =========================================================================
 
     public void drawMainMenu(Graphics2D g, int screenWidth, int screenHeight) {
-        buttons.clear();
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.92f);
         drawStarfield(g, screenWidth, screenHeight);
 
@@ -105,10 +115,11 @@ public class Menu {
         drawCentredText(g, CTRL_FONT, new Color(140, 120, 160),
                 "1-4 - Select Wand    Q - Next Wand    ESC - Pause",
                 screenWidth, ctrlY + 38);
+        publishButtons();
     }
 
     public void drawPauseMenu(Graphics2D g, int screenWidth, int screenHeight) {
-        buttons.clear();
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.65f);
         drawCentredText(g, TITLE_FONT, new Color(200, 160, 255), "PAUSED", screenWidth, screenHeight / 2 - 60);
 
@@ -116,10 +127,11 @@ public class Menu {
         drawButton(g, BODY_FONT, "Resume",   screenWidth, optY,      "resume");
         drawButton(g, BODY_FONT, "Settings", screenWidth, optY + 40, "settings");
         drawButton(g, BODY_FONT, "Main Menu", screenWidth, optY + 80, "main_menu");
+        publishButtons();
     }
 
     public void drawDeathScreen(Graphics2D g, int screenWidth, int screenHeight, int gold) {
-        buttons.clear();
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.80f);
 
         float alpha = 0.7f + 0.3f * (float) Math.sin(flickerPhase * 0.7f);
@@ -132,11 +144,12 @@ public class Menu {
         int optY = screenHeight / 2 + 40;
         drawButton(g, BODY_FONT, "Restart",   screenWidth, optY,      "restart");
         drawButton(g, BODY_FONT, "Main Menu", screenWidth, optY + 40, "main_menu");
+        publishButtons();
     }
 
     public void drawLevelCompleteScreen(Graphics2D g, int screenWidth, int screenHeight,
                                          boolean isLastLevel, int gold) {
-        buttons.clear();
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.75f);
 
         String title = isLastLevel ? "YOU WIN!" : "LEVEL COMPLETE";
@@ -152,14 +165,15 @@ public class Menu {
         } else {
             drawButton(g, BODY_FONT, "Main Menu", screenWidth, optY, "main_menu");
         }
+        publishButtons();
     }
 
     public void drawSettingsMenu(Graphics2D g, int screenWidth, int screenHeight,
                                   String tab, boolean godMode, boolean infiniteMana,
                                   boolean fullscreen, boolean debug, boolean musicOn,
                                   boolean sfxOn, boolean showFps, boolean screenShake,
-                                  int screenW, int screenH) {
-        buttons.clear();
+                                  int screenW, int screenH, boolean fromPause) {
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.85f);
 
         drawCentredText(g, TITLE_FONT, new Color(200, 180, 255),
@@ -197,12 +211,15 @@ public class Menu {
 
         // Bottom actions
         int bottomY = screenHeight - 100;
-        drawButton(g, BODY_FONT, "Restart Game", screenWidth, bottomY,      "restart",
-                new Color(200, 80, 80), new Color(255, 120, 120));
-        drawButton(g, BODY_FONT, "Main Menu",    screenWidth, bottomY + 35, "main_menu",
-                new Color(200, 80, 80), new Color(255, 120, 120));
-        drawButton(g, BODY_FONT, "Back",         screenWidth, bottomY + 70, "back",
+        if (fromPause) {
+            drawButton(g, BODY_FONT, "Restart Game", screenWidth, bottomY,      "restart",
+                    new Color(200, 80, 80), new Color(255, 120, 120));
+            drawButton(g, BODY_FONT, "Main Menu",    screenWidth, bottomY + 35, "main_menu",
+                    new Color(200, 80, 80), new Color(255, 120, 120));
+        }
+        drawButton(g, BODY_FONT, "Back",         screenWidth, fromPause ? bottomY + 70 : bottomY, "back",
                 new Color(150, 130, 170), BTN_HOVER);
+        publishButtons();
     }
 
     // =========================================================================
@@ -303,7 +320,7 @@ public class Menu {
 
         g.setColor(active ? Color.WHITE : (hover ? BTN_HOVER : BTN_NORMAL));
         g.drawString(label, x, y);
-        buttons.add(new MenuButton(rect, action));
+        pendingButtons.add(new MenuButton(rect, action));
     }
 
     private void drawResButton(Graphics2D g, int screenWidth, int y, String label,
@@ -332,7 +349,7 @@ public class Menu {
 
         g.setColor(active ? new Color(120, 255, 120) : (hover ? BTN_HOVER : BTN_NORMAL));
         g.drawString(label, (screenWidth - textW) / 2, y);
-        if (!active) buttons.add(new MenuButton(rect, action));
+        if (!active) pendingButtons.add(new MenuButton(rect, action));
     }
 
     /**
@@ -341,7 +358,7 @@ public class Menu {
     public void drawShopMenu(Graphics2D g, int screenWidth, int screenHeight,
                               int gold, int maxHealth, int maxMana, Wand shopWand,
                               int wandCount, String activeWandName) {
-        buttons.clear();
+        pendingButtons.clear();
         drawDarkOverlay(g, screenWidth, screenHeight, 0.80f);
 
         drawCentredText(g, TITLE_FONT, new Color(255, 200, 80),
@@ -378,6 +395,7 @@ public class Menu {
         int bottomY = screenHeight - 60;
         drawButton(g, BODY_FONT, "Continue to Next Level", screenWidth, bottomY, "shop_continue",
                 new Color(100, 255, 120), new Color(150, 255, 170));
+        publishButtons();
     }
 
     // =========================================================================
@@ -415,7 +433,7 @@ public class Menu {
         g.setColor(hover ? hoverCol : normalCol);
         g.drawString(label, (screenWidth - textW) / 2, y);
 
-        buttons.add(new MenuButton(rect, action));
+        pendingButtons.add(new MenuButton(rect, action));
     }
 
     /** Draws a toggle button with ON/OFF badge. */
@@ -456,7 +474,7 @@ public class Menu {
         g.setColor(badgeCol);
         g.drawString(badge, startX + labelW, y);
 
-        buttons.add(new MenuButton(rect, action));
+        pendingButtons.add(new MenuButton(rect, action));
     }
 
     /** Draws a shop item row with name, description, optional swap hint, cost, and buy button. */
@@ -515,7 +533,7 @@ public class Menu {
                 buyY + buyH / 2 + fm2.getAscent() / 2 - 2);
 
         if (canAfford) {
-            buttons.add(new MenuButton(buyRect, action));
+            pendingButtons.add(new MenuButton(buyRect, action));
         }
     }
 

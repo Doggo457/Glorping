@@ -282,6 +282,33 @@ public abstract class Enemy extends Entity {
     }
 
     /**
+     * Safely shifts the entity's X position, stopping at the first solid tile.
+     * Prevents flying enemies from teleporting through walls via shiftX.
+     */
+    protected void safeShiftX(TileMap tmap, float shift) {
+        if (tmap == null || shift == 0) { shiftX(shift); return; }
+        float cx = getX() + (shift > 0 ? getWidth() : 0);
+        float cy = getY() + getHeight() / 2f;
+        if (!CollisionHandler.isSolid(tmap, cx + shift, cy)) {
+            shiftX(shift);
+        }
+        // else: would clip into a wall, so don't move
+    }
+
+    /**
+     * Safely shifts the entity's Y position, stopping at the first solid tile.
+     * Prevents flying enemies from teleporting through walls via shiftY.
+     */
+    protected void safeShiftY(TileMap tmap, float shift) {
+        if (tmap == null || shift == 0) { shiftY(shift); return; }
+        float cx = getX() + getWidth() / 2f;
+        float cy = getY() + (shift > 0 ? getHeight() : 0);
+        if (!CollisionHandler.isSolid(tmap, cx, cy + shift)) {
+            shiftY(shift);
+        }
+    }
+
+    /**
      * For flying enemies: steers velocity away from nearby solid tiles.
      * Samples 8 directions around the enemy and pushes velocity away
      * from any solid neighbours.
